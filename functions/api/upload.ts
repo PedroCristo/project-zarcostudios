@@ -1,92 +1,149 @@
-async function generateCloudinarySignature(params: Record<string, string>, apiSecret: string): Promise<string> {
+async function generateCloudinarySignature(
+  params: Record<string, string>,
+  apiSecret: string
+): Promise<string> {
   const sortedKeys = Object.keys(params).sort();
-  const signatureString = sortedKeys.map(k => `${k}=${params[k]}`).join('&') + apiSecret;
-  
-  // SHA-1 digest using native Web Crypto API (fully supported on Cloudflare Workers/Pages)
+  const signatureString =
+    sortedKeys.map((k) => `${k}=${params[k]}`).join("&") + apiSecret;
+
   const msgUint8 = new TextEncoder().encode(signatureString);
-  const hashBuffer = await crypto.subtle.digest('SHA-1', msgUint8);
+  const hashBuffer = await crypto.subtle.digest("SHA-1", msgUint8);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return hashArray
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export async function onRequestPost(context: any) {
   const env = context.env || {};
+
   try {
     const formData = await context.request.formData();
-    const file: any = formData.get("file");
+    const file = formData.get("file");
     const folder = (formData.get("folder") || "zarco-studio") as string;
 
-    if (!file) {
-      return new Response(JSON.stringify({ error: "No file uploaded" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    const cloudName = env.VITE_CLOUDINARY_CLOUD_NAME || env.CLOUDINARY_CLOUD_NAME;
-    const apiKey = env.VITE_CLOUDINARY_API_KEY || env.CLOUDINARY_API_KEY;
-    const apiSecret = env.CLOUDINARY_API_SECRET || env.VITE_CLOUDINARY_API_SECRET;
-
-    const hasCloudinary = !!(cloudName && apiKey && apiSecret);
-
-    if (hasCloudinary) {
-      try {
-        const timestamp = String(Math.floor(Date.now() / 1000));
-        
-        // Generate signature
-        const signature = await generateCloudinarySignature({ folder, timestamp }, apiSecret);
-
-        // Build a fresh multipart formData to post to Cloudinary REST endpoint
-        const cloudinaryForm = new FormData();
-        cloudinaryForm.append("file", file);
-        cloudinaryForm.append("folder", folder);
-        cloudinaryForm.append("timestamp", timestamp);
-        cloudinaryForm.append("api_key", apiKey);
-        cloudinaryForm.append("signature", signature);
-
-        const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
-        
-        const res = await fetch(cloudinaryUrl, {
-          method: "POST",
-          body: cloudinaryForm,
-        });
-
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(`Cloudinary REST API error: ${res.status} ${errorText}`);
+    if (!(file instanceof File)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid or missing file" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
         }
-
-        const uploadResponse = await res.json();
-
-        return new Response(JSON.stringify({ url: uploadResponse.secure_url }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (cloudinaryError: any) {
-        console.error("Cloudinary upload failed:", cloudinaryError);
-        return new Response(JSON.stringify({ error: "Cloudinary upload failed", detail: cloudinaryError.message }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    } else {
-      const missingKeys = [];
-      if (!cloudName) missingKeys.push("CLOUDINARY_CLOUD_NAME (or VITE_CLOUDINARY_CLOUD_NAME)");
-      if (!apiKey) missingKeys.push("CLOUDINARY_API_KEY (or VITE_CLOUDINARY_API_KEY)");
-      if (!apiSecret) missingKeys.push("CLOUDINARY_API_SECRET (or VITE_CLOUDINARY_API_SECRET)");
-      
-      return new Response(JSON.stringify({ 
-        error: `Cloudinary configuration is missing. Please define these variables in your Cloudflare dashboard (under Settings -> Environment variables): ${missingKeys.join(", ")}` 
-      }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
+      );
     }
-  } catch (error: any) {
-    console.error("Upload handler error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
+
+    // ----------------------------
+    // ENV DEBUG (CRITICAL)
+    // ----------------------------
+    const cloudName =
+      env.CLOUDINARY_CLOUD_NAME || env.VITE_CLOUDINARY_CLOUD_NAME;
+    const apiKey =
+      env.CLOUDINARY_API_KEY || env.VITE_CLOUDINARY_API_KEY;
+    const apiSecret =
+      env.CLOUDINARY_API_SECRET || env.VITE_CLOUDINARY_API_SECRET;
+
+    console.log("🔥 CLOUDINARY ENV DEBUG:", {
+      cloudName,
+      apiKeyExists: !!apiKey,
+      apiSecretExists: !!apiSecret,
+      envKeys: Object.keys(env),
     });
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      return new Response(
+        JSON.stringify({
+          error: "Missing Cloudinary configuration",
+          missing: {
+            cloudName: !cloudName,
+            apiKey: !apiKey,
+            apiSecret: !apiSecret,
+          },
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    console.log("🔥 SIGNATURE INPUT:", {
+      folder,
+      timestamp,
+    });
+
+    const signature = await generateCloudinarySignature(
+      { folder, timestamp },
+      apiSecret
+    );
+
+    const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+
+    const cloudinaryForm = new FormData();
+    cloudinaryForm.append("file", file);
+    cloudinaryForm.append("folder", folder);
+    cloudinaryForm.append("timestamp", timestamp);
+    cloudinaryForm.append("api_key", apiKey);
+    cloudinaryForm.append("signature", signature);
+
+    console.log("🔥 CLOUDINARY REQUEST:", {
+      url: cloudinaryUrl,
+      folder,
+      timestamp,
+    });
+
+    const res = await fetch(cloudinaryUrl, {
+      method: "POST",
+      body: cloudinaryForm,
+    });
+
+    const responseText = await res.text();
+
+    console.log("🔥 CLOUDINARY RESPONSE:", {
+      status: res.status,
+      body: responseText,
+    });
+
+    if (!res.ok) {
+      return new Response(
+        JSON.stringify({
+          error: "Cloudinary upload failed",
+          status: res.status,
+          detail: responseText,
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const uploadResponse = JSON.parse(responseText);
+
+    return new Response(
+      JSON.stringify({ url: uploadResponse.secure_url }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  } catch (error: any) {
+    console.error("🔥 UPLOAD HANDLER ERROR:", {
+      message: error?.message,
+      stack: error?.stack,
+    });
+
+    return new Response(
+      JSON.stringify({
+        error: "Internal upload error",
+        detail: error?.message,
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 }
