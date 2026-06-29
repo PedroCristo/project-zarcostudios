@@ -60,8 +60,25 @@ export async function onRequestPost(context: any) {
 
         if (!res.ok) {
           const errorText = await res.text();
-          throw new Error(
-            `Cloudinary REST API error: ${res.status} ${errorText}`
+
+          console.error("CLOUDINARY FAILED RESPONSE:", {
+            status: res.status,
+            body: errorText,
+            cloudName,
+            apiKey: !!apiKey,
+            apiSecret: !!apiSecret,
+          });
+
+          return new Response(
+            JSON.stringify({
+              error: "Cloudinary upload failed",
+              status: res.status,
+              detail: errorText,
+            }),
+            {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }
           );
         }
 
