@@ -3,6 +3,7 @@ async function generateCloudinarySignature(
   apiSecret: string
 ): Promise<string> {
   const sortedKeys = Object.keys(params).sort();
+
   const signatureString =
     sortedKeys.map((k) => `${k}=${params[k]}`).join("&") + apiSecret;
 
@@ -17,6 +18,8 @@ async function generateCloudinarySignature(
 
 export async function onRequestPost(context: any) {
   const env = context.env || {};
+
+  const DEBUG = false; // 👈 toggle this only when needed
 
   try {
     const formData = await context.request.formData();
@@ -33,9 +36,6 @@ export async function onRequestPost(context: any) {
       );
     }
 
-    // ----------------------------
-    // ENV DEBUG (CRITICAL)
-    // ----------------------------
     const cloudName =
       env.CLOUDINARY_CLOUD_NAME || env.VITE_CLOUDINARY_CLOUD_NAME;
     const apiKey =
@@ -43,22 +43,18 @@ export async function onRequestPost(context: any) {
     const apiSecret =
       env.CLOUDINARY_API_SECRET || env.VITE_CLOUDINARY_API_SECRET;
 
-    console.log("🔥 CLOUDINARY ENV DEBUG:", {
-      cloudName,
-      apiKeyExists: !!apiKey,
-      apiSecretExists: !!apiSecret,
-      envKeys: Object.keys(env),
-    });
+    if (DEBUG) {
+      console.log("CLOUDINARY ENV CHECK:", {
+        cloudName,
+        apiKeyExists: !!apiKey,
+        apiSecretExists: !!apiSecret,
+      });
+    }
 
     if (!cloudName || !apiKey || !apiSecret) {
       return new Response(
         JSON.stringify({
           error: "Missing Cloudinary configuration",
-          missing: {
-            cloudName: !cloudName,
-            apiKey: !apiKey,
-            apiSecret: !apiSecret,
-          },
         }),
         {
           status: 500,
@@ -68,11 +64,6 @@ export async function onRequestPost(context: any) {
     }
 
     const timestamp = String(Math.floor(Date.now() / 1000));
-
-    console.log("🔥 SIGNATURE INPUT:", {
-      folder,
-      timestamp,
-    });
 
     const signature = await generateCloudinarySignature(
       { folder, timestamp },
@@ -88,11 +79,13 @@ export async function onRequestPost(context: any) {
     cloudinaryForm.append("api_key", apiKey);
     cloudinaryForm.append("signature", signature);
 
-    console.log("🔥 CLOUDINARY REQUEST:", {
-      url: cloudinaryUrl,
-      folder,
-      timestamp,
-    });
+    if (DEBUG) {
+      console.log("CLOUDINARY REQUEST:", {
+        url: cloudinaryUrl,
+        folder,
+        timestamp,
+      });
+    }
 
     const res = await fetch(cloudinaryUrl, {
       method: "POST",
@@ -101,10 +94,12 @@ export async function onRequestPost(context: any) {
 
     const responseText = await res.text();
 
-    console.log("🔥 CLOUDINARY RESPONSE:", {
-      status: res.status,
-      body: responseText,
-    });
+    if (DEBUG) {
+      console.log("CLOUDINARY RESPONSE:", {
+        status: res.status,
+        body: responseText,
+      });
+    }
 
     if (!res.ok) {
       return new Response(
@@ -120,7 +115,20 @@ export async function onRequestPost(context: any) {
       );
     }
 
-    const uploadResponse = JSON.parse(responseText);
+    let uploadResponse;
+    try {
+      uploadResponse = JSON.parse(responseText);
+    } catch {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid Cloudinary response",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
 
     return new Response(
       JSON.stringify({ url: uploadResponse.secure_url }),
@@ -130,7 +138,7 @@ export async function onRequestPost(context: any) {
       }
     );
   } catch (error: any) {
-    console.error("🔥 UPLOAD HANDLER ERROR:", {
+    console.error("UPLOAD ERROR:", {
       message: error?.message,
       stack: error?.stack,
     });
