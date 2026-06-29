@@ -98,7 +98,7 @@ export default function App() {
       return <AdminDashboard onLogout={() => { window.location.hash = ''; }} />;
     }
 
-    if (showMaintenance && !isLogin) {
+    if (showMaintenance && !isLogin && !isProjectHub) {
       return <MaintenancePage />;
     }
 
