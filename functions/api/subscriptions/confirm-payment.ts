@@ -57,7 +57,13 @@ export async function onRequestPost(context: any) {
       sessionId
     } = body;
 
+    console.log("[Server][confirm-payment] Incoming request body:", JSON.stringify({
+      projectId, clientEmail, clientName, projectName, subscriptionTitle,
+      subscriptionPrice, subscriptionInterval, transactionId, lang, action, sessionId
+    }));
+
     if (!projectId) {
+      console.warn("[Server][confirm-payment] Missing required parameter: projectId");
       return new Response(
         JSON.stringify({ error: "Missing required parameter: projectId" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -71,6 +77,7 @@ export async function onRequestPost(context: any) {
     const year = new Date().getFullYear();
     let nextNum = 1;
     try {
+      console.log("[Server][confirm-payment] Listing clientProjects to compute next sequential sub id...");
       const snapshot = await listDocuments("clientProjects");
       let maxNum = 0;
       snapshot.forEach((pData: any) => {
@@ -85,19 +92,25 @@ export async function onRequestPost(context: any) {
         }
       });
       nextNum = maxNum + 1;
+      console.log(`[Server][confirm-payment] Computed nextNum=${nextNum} (maxNum=${maxNum}, year=${year})`);
     } catch (err) {
       console.warn("Failed to generate unique sub id suffix:", err);
       nextNum = Math.floor(Math.random() * 1000) + 100;
+      console.warn(`[Server][confirm-payment] Falling back to random nextNum=${nextNum}`);
     }
     const paddedNum = String(nextNum).padStart(5, '0');
     const customTransactionId = `ZAR-${year}-SUB-${paddedNum}`;
     let transactionIdToUse = customTransactionId;
+    console.log(`[Server][confirm-payment] customTransactionId=${customTransactionId}`);
 
     const stripeKey = env.STRIPE_SECRET_KEY;
+    console.log(`[Server][confirm-payment] STRIPE_SECRET_KEY present: ${!!stripeKey}`);
 
     // --- CASE 1: STRIPE CHECKOUT VERIFICATION ---
     if (action === "verify" && sessionId) {
+      console.log("[Server][confirm-payment] Branch: CASE 1 - verify checkout session");
       if (!stripeKey) {
+        console.error("[Server][confirm-payment] Stripe key missing while attempting to verify session", sessionId);
         return new Response(
           JSON.stringify({ error: "Stripe key is missing in this environment" }),
           { status: 500, headers: { "Content-Type": "application/json" } }
@@ -110,7 +123,10 @@ export async function onRequestPost(context: any) {
       });
       
       const session = await stripe.checkout.sessions.retrieve(sessionId);
+      console.log(`[Server][confirm-payment] Retrieved session ${session.id}: payment_status=${session.payment_status}, status=${session.status}, subscription=${session.subscription}`);
+
       if (session.payment_status !== "paid" && session.status !== "complete") {
+        console.warn(`[Server][confirm-payment] Session ${sessionId} not paid/complete. payment_status=${session.payment_status}, status=${session.status}`);
         return new Response(
           JSON.stringify({ error: "Checkout session is not paid or completed yet." }),
           { status: 400, headers: { "Content-Type": "application/json" } }
@@ -127,6 +143,7 @@ export async function onRequestPost(context: any) {
       isPt = meta.lang === "pt" || isPt;
       
       transactionIdToUse = typeof session.subscription === "string" ? session.subscription : (session.id || customTransactionId);
+      console.log(`[Server][confirm-payment] Resolved from metadata: clientEmail=${clientEmail}, clientName=${clientName}, projectName=${projectName}, subscriptionTitle=${subscriptionTitle}, subscriptionPrice=${subscriptionPrice}, subscriptionInterval=${subscriptionInterval}, isPt=${isPt}, transactionIdToUse=${transactionIdToUse}`);
 
       // Update Database via REST API helper
       console.log(`[Server] Updating db subscription status for verified project ${projectId}`);
@@ -143,6 +160,7 @@ export async function onRequestPost(context: any) {
       }
     } // --- CASE 2: LIVE STRIPE CHECKOUT SESSION INITIATION ---
     else if (stripeKey) {
+      console.log("[Server][confirm-payment] Branch: CASE 2 - create live Stripe checkout session");
       try {
         console.log(`[Server] Creating secure Stripe Checkout Session for client: ${clientEmail}`);
         const stripe = new Stripe(stripeKey, {
@@ -150,14 +168,18 @@ export async function onRequestPost(context: any) {
         });
         
         const origin = body.origin || context.request.headers.get("origin") || "http://localhost:3000";
+        console.log(`[Server][confirm-payment] Using origin=${origin}`);
         
         // Find or create customer
         let stripeCustomerId: string | undefined;
         try {
+          console.log(`[Server][confirm-payment] Looking up existing Stripe customer for email=${clientEmail}`);
           const existingCustomers = await stripe.customers.list({ email: clientEmail, limit: 1 });
           if (existingCustomers.data && existingCustomers.data.length > 0) {
             stripeCustomerId = existingCustomers.data[0].id;
+            console.log(`[Server][confirm-payment] Found existing customer id=${stripeCustomerId}`);
           } else {
+            console.log("[Server][confirm-payment] No existing customer found, creating new one");
             const customerObj = await stripe.customers.create({
               email: clientEmail,
               name: clientName || "Valued Customer",
@@ -166,11 +188,13 @@ export async function onRequestPost(context: any) {
               }
             });
             stripeCustomerId = customerObj.id;
+            console.log(`[Server][confirm-payment] Created new customer id=${stripeCustomerId}`);
           }
         } catch (custErr) {
           console.warn("[Server] Failed to handle customer lookup, continuing without customer ID:", custErr);
         }
 
+        console.log(`[Server][confirm-payment] Creating checkout session: price=${subscriptionPrice}, interval=${subscriptionInterval}, customerId=${stripeCustomerId}`);
         const session = await stripe.checkout.sessions.create({
           customer: stripeCustomerId,
           customer_email: stripeCustomerId ? undefined : (clientEmail || undefined),
@@ -207,6 +231,8 @@ export async function onRequestPost(context: any) {
           }
         });
 
+        console.log(`[Server][confirm-payment] Checkout session created: id=${session.id}, url=${session.url}`);
+
         return new Response(
           JSON.stringify({
             success: true,
@@ -218,6 +244,7 @@ export async function onRequestPost(context: any) {
       } catch (stripeErr: any) {
         console.error("[Server] Stripe direct process error:", stripeErr);
         const translatedMsg = translateStripeError(stripeErr.message || "An error occurred with Stripe processing.", isPt);
+        console.error(`[Server][confirm-payment] Translated Stripe error message: ${translatedMsg}`);
         return new Response(
           JSON.stringify({ 
             error: translatedMsg,
@@ -229,6 +256,7 @@ export async function onRequestPost(context: any) {
     } 
     // --- CASE 3: SANDBOX / DEVELOPMENT MOCK PAYMENTS ---
     else {
+      console.log("[Server][confirm-payment] Branch: CASE 3 - sandbox/mock payment (no Stripe key configured)");
       console.log(`[Server] No STRIPE_SECRET_KEY found. Direct client-side billing Sandbox mock fallback activated.`);
       
       // Update Database via REST API helper
@@ -249,10 +277,12 @@ export async function onRequestPost(context: any) {
     // Get logo from settings if possible, or use a placeholder
     let logoUrl = null;
     try {
+      console.log("[Server][confirm-payment] Fetching company-legal settings for logoUrl...");
       const settingsDoc = await getDocument("settings", "company-legal");
       if (settingsDoc) {
         logoUrl = settingsDoc.logoUrl;
       }
+      console.log(`[Server][confirm-payment] logoUrl resolved: ${logoUrl}`);
     } catch (settingsErr) {
       console.warn("Failed to fetch settings for logo in confirm-payment:", settingsErr);
     }
@@ -269,6 +299,7 @@ export async function onRequestPost(context: any) {
       month: 'long', 
       day: 'numeric' 
     });
+    console.log(`[Server][confirm-payment] paidAtStr=${paidAtStr}, formattedNextDate=${formattedNextDate}`);
 
     // Calculate paid month name
     const monthEnglish = new Date().toLocaleString('en-US', { month: 'long' });
@@ -374,6 +405,7 @@ export async function onRequestPost(context: any) {
 
     let clientEmailStatus = "not_sent";
     try {
+      console.log(`[Server][confirm-payment] Sending confirmation email to clientEmail=${clientEmail}, subject="${clientSubject}"`);
       await sendEmailViaFetch(env, {
         from: 'Zarco Studios <no-reply@zarcostudios.com>',
         to: [clientEmail],
@@ -381,6 +413,7 @@ export async function onRequestPost(context: any) {
         html: clientHtml,
       });
       clientEmailStatus = "sent";
+      console.log("[Server][confirm-payment] Client email sent successfully on first attempt.");
     } catch (clientErr: any) {
       console.warn("[Server] Client email failed using custom domain. Retrying with no-reply@zarcostudios.com...", clientErr.message);
       try {
@@ -391,11 +424,14 @@ export async function onRequestPost(context: any) {
           html: clientHtml,
         });
         clientEmailStatus = "sent";
+        console.log("[Server][confirm-payment] Client email sent successfully on retry.");
       } catch (retryErr: any) {
         console.error("[Server] Client email failed completely:", retryErr);
         clientEmailStatus = `failed: ${retryErr.message}`;
       }
     }
+
+    console.log(`[Server][confirm-payment] Final result: transactionId=${transactionIdToUse}, clientEmailStatus=${clientEmailStatus}, paidAt=${paidAtStr}`);
 
     return new Response(
       JSON.stringify({ 

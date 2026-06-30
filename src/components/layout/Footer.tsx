@@ -39,7 +39,7 @@ export function Footer() {
               <li><a href="https://www.facebook.com/zarcostudios" target="_blank" rel="noopener noreferrer" className="hover:text-zarco-cyan transition-colors">Facebook</a></li>
               <li><a href="https://www.linkedin.com/in/pedro-cristo/" target="_blank" rel="noopener noreferrer" className="hover:text-zarco-cyan transition-colors">LinkedIn</a></li>
               <li><a href="https://github.com/PedroCristo" target="_blank" rel="noopener noreferrer" className="hover:text-zarco-cyan transition-colors">GitHub</a></li>
-              <li className="pt-4"><a href="#login" className="text-[9px] text-white/10 hover:text-white transition-colors">{t('login.title')}</a></li>
+              {/* <li className="pt-4"><a href="#login" className="text-[9px] text-white/10 hover:text-white transition-colors">{t('login.title')}</a></li> */}
             </ul>
           </div>
 
