@@ -1,213 +1,214 @@
 import firebaseConfig from "../../firebase-applet-config.json";
-import { GoogleAuth } from "google-auth-library";
 
 const projectId = firebaseConfig.projectId;
 const databaseId = firebaseConfig.firestoreDatabaseId;
 const apiKey = firebaseConfig.apiKey;
 
-let googleAuth: GoogleAuth | null = null;
-
-async function getAccessToken(): Promise<string | null> {
-  if (typeof process === "undefined" || !process.env) {
-    return null;
-  }
-  try {
-    if (!googleAuth) {
-      const options: any = {
-        scopes: ["https://www.googleapis.com/auth/datastore", "https://www.googleapis.com/auth/cloud-platform"]
-      };
-
-      // Support inline service account JSON in .env for local development
-      const serviceAccountStr = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-      if (serviceAccountStr) {
-        try {
-          options.credentials = JSON.parse(serviceAccountStr.trim());
-          console.log("[Server] Loaded explicit service account credentials from environment variables.");
-        } catch (jsonErr: any) {
-          console.error("[Server] Failed to parse service account JSON from environment variable:", jsonErr.message);
-        }
-      }
-
-      googleAuth = new GoogleAuth(options);
-    }
-    const client = await googleAuth.getClient();
-    const tokenResponse = await client.getAccessToken();
-    return tokenResponse.token || null;
-  } catch (err: any) {
-    console.warn("[Server] Google Auth credentials fallback active. Running without administrative bypass token:", err.message);
-    return null;
-  }
-}
+// -----------------------------
+// Firestore value converters
+// -----------------------------
 
 function toFirestoreValue(val: any): any {
   if (val === null || val === undefined) {
     return { nullValue: null };
   }
+
   if (typeof val === "boolean") {
     return { booleanValue: val };
   }
+
   if (typeof val === "number") {
-    if (Number.isInteger(val)) {
-      return { integerValue: String(val) };
-    }
-    return { doubleValue: val };
+    return Number.isInteger(val)
+      ? { integerValue: String(val) }
+      : { doubleValue: val };
   }
+
   if (typeof val === "string") {
     return { stringValue: val };
   }
+
   if (val instanceof Date) {
     return { timestampValue: val.toISOString() };
   }
+
   if (Array.isArray(val)) {
     return {
       arrayValue: {
-        values: val.map(toFirestoreValue)
-      }
+        values: val.map(toFirestoreValue),
+      },
     };
   }
+
   if (typeof val === "object") {
     return {
       mapValue: {
-        fields: toFirestoreFields(val)
-      }
+        fields: toFirestoreFields(val),
+      },
     };
   }
+
   return { stringValue: String(val) };
 }
 
 function toFirestoreFields(obj: any): any {
   const fields: any = {};
+
   for (const [key, val] of Object.entries(obj)) {
     if (val !== undefined) {
       fields[key] = toFirestoreValue(val);
     }
   }
+
   return fields;
 }
 
 function fromFirestoreValue(value: any): any {
   if (!value) return null;
+
   if ("stringValue" in value) return value.stringValue;
   if ("booleanValue" in value) return value.booleanValue;
   if ("integerValue" in value) return parseInt(value.integerValue, 10);
   if ("doubleValue" in value) return parseFloat(value.doubleValue);
   if ("timestampValue" in value) return new Date(value.timestampValue);
   if ("nullValue" in value) return null;
+
   if ("arrayValue" in value) {
     const vals = value.arrayValue.values || [];
     return vals.map(fromFirestoreValue);
   }
+
   if ("mapValue" in value) {
-    const fields = value.mapValue.fields || {};
-    return fromFirestoreFields(fields);
+    return fromFirestoreFields(value.mapValue.fields || {});
   }
+
   return null;
 }
 
 function fromFirestoreFields(fields: any): any {
   const obj: any = {};
   if (!fields) return obj;
+
   for (const [key, value] of Object.entries(fields)) {
     obj[key] = fromFirestoreValue(value);
   }
+
   return obj;
 }
 
-export async function getDocument(collectionName: string, docId: string, idToken?: string | null) {
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/${collectionName}/${encodeURIComponent(docId)}?key=${apiKey}`;
-  const headers: any = {};
-  const token = idToken || await getAccessToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  const res = await fetch(url, { headers });
+// -----------------------------
+// GET document
+// -----------------------------
+
+export async function getDocument(collectionName: string, docId: string) {
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/${collectionName}/${encodeURIComponent(
+    docId
+  )}?key=${apiKey}`;
+
+  const res = await fetch(url);
+
   if (res.status === 404) return null;
+
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Firestore get error: ${res.status} ${errText}`);
+    throw new Error(`Firestore get error: ${res.status} ${await res.text()}`);
   }
-  const d = await res.json();
+
+  const data = await res.json();
+
   return {
     id: docId,
-    ...fromFirestoreFields(d.fields)
+    ...fromFirestoreFields(data.fields),
   };
 }
 
-export async function setDocument(collectionName: string, docId: string, data: any, merge = false, idToken?: string | null) {
-  let url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/${collectionName}/${encodeURIComponent(docId)}?key=${apiKey}`;
+// -----------------------------
+// SET document (create/merge)
+// -----------------------------
+
+export async function setDocument(
+  collectionName: string,
+  docId: string,
+  data: any,
+  merge = false
+) {
+  let url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/${collectionName}/${encodeURIComponent(
+    docId
+  )}?key=${apiKey}`;
+
   if (merge) {
     const keys = Object.keys(data);
-    if (keys.length > 0) {
-      const maskParams = keys.map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
-      url += `&${maskParams}`;
+    if (keys.length) {
+      const mask = keys
+        .map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
+        .join("&");
+
+      url += `&${mask}`;
     }
   }
-  
-  const fields = toFirestoreFields(data);
-  const headers: any = {
-    "Content-Type": "application/json"
-  };
-  const token = idToken || await getAccessToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+
   const res = await fetch(url, {
     method: "PATCH",
-    headers,
-    body: JSON.stringify({ fields })
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      fields: toFirestoreFields(data),
+    }),
   });
-  
+
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Firestore set error: ${res.status} ${errText}`);
+    throw new Error(`Firestore set error: ${res.status} ${await res.text()}`);
   }
-  
-  const d = await res.json();
+
+  const dataRes = await res.json();
+
   return {
     id: docId,
-    ...fromFirestoreFields(d.fields)
+    ...fromFirestoreFields(dataRes.fields),
   };
 }
 
-export async function listDocuments(collectionName: string, idToken?: string | null) {
+// -----------------------------
+// LIST documents
+// -----------------------------
+
+export async function listDocuments(collectionName: string) {
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents:runQuery?key=${apiKey}`;
-  const headers: any = {
-    "Content-Type": "application/json"
-  };
-  const token = idToken || await getAccessToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+
   const res = await fetch(url, {
     method: "POST",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       structuredQuery: {
-        from: [{ collectionId: collectionName }]
-      }
-    })
+        from: [{ collectionId: collectionName }],
+      },
+    }),
   });
-  
+
   if (res.status === 404) return [];
+
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Firestore list error: ${res.status} ${errText}`);
+    throw new Error(`Firestore list error: ${res.status} ${await res.text()}`);
   }
-  
+
   const data = await res.json();
+
   if (!Array.isArray(data)) return [];
-  
+
   const list: any[] = [];
+
   for (const item of data) {
-    if (item && item.document && item.document.name) {
+    if (item?.document?.name) {
       const d = item.document;
-      const parts = d.name.split("/");
-      const id = parts[parts.length - 1];
+      const id = d.name.split("/").pop();
+
       list.push({
         id,
-        ...fromFirestoreFields(d.fields)
+        ...fromFirestoreFields(d.fields),
       });
     }
   }
+
   return list;
 }
