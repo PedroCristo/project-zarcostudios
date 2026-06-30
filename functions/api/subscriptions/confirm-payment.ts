@@ -43,7 +43,7 @@ export async function onRequestPost(context: any) {
   const env = context.env || {};
   try {
     const body = await context.request.json();
-    const { 
+    let { 
       projectId, 
       clientEmail, 
       clientName, 
@@ -53,23 +53,20 @@ export async function onRequestPost(context: any) {
       subscriptionInterval, 
       transactionId, 
       lang,
-      cardNumber,
-      cardExpiry,
-      cardCvc,
-      cardName,
-      cardPostal
+      action,
+      sessionId
     } = body;
 
-    if (!projectId || !clientEmail) {
+    if (!projectId) {
       return new Response(
-        JSON.stringify({ error: "Missing required parameters" }),
+        JSON.stringify({ error: "Missing required parameter: projectId" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    const isPt = lang === "pt";
-    const paidAtStr = new Date().toISOString();
-
+    let isPt = lang === "pt";
+    let paidAtStr = new Date().toISOString();
+    
     // Generate unique sequential transaction/receipt ID format: ZAR-[year]-SUB-00001
     const year = new Date().getFullYear();
     let nextNum = 1;
@@ -96,127 +93,128 @@ export async function onRequestPost(context: any) {
     const customTransactionId = `ZAR-${year}-SUB-${paddedNum}`;
     let transactionIdToUse = customTransactionId;
 
-    // Try processing with real Stripe SDK if we have key and card details
     const stripeKey = env.STRIPE_SECRET_KEY;
-    if (stripeKey && cardNumber) {
+
+    // --- CASE 1: STRIPE CHECKOUT VERIFICATION ---
+    if (action === "verify" && sessionId) {
+      if (!stripeKey) {
+        return new Response(
+          JSON.stringify({ error: "Stripe key is missing in this environment" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      
+      console.log(`[Server] Verifying Stripe Session ID: ${sessionId}`);
+      const stripe = new Stripe(stripeKey, {
+        apiVersion: "2023-10-16" as any
+      });
+      
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.payment_status !== "paid" && session.status !== "complete") {
+        return new Response(
+          JSON.stringify({ error: "Checkout session is not paid or completed yet." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      
+      const meta = session.metadata || {};
+      clientEmail = meta.clientEmail || session.customer_details?.email || clientEmail || "";
+      clientName = meta.clientName || session.customer_details?.name || clientName || "Valued Customer";
+      projectName = meta.projectName || projectName || "";
+      subscriptionTitle = meta.subscriptionTitle || subscriptionTitle || "";
+      subscriptionPrice = Number(meta.subscriptionPrice || subscriptionPrice || 0);
+      subscriptionInterval = meta.subscriptionInterval || subscriptionInterval || "monthly";
+      isPt = meta.lang === "pt" || isPt;
+      
+      transactionIdToUse = typeof session.subscription === "string" ? session.subscription : (session.id || customTransactionId);
+
+      // Update Database via REST API helper
+      console.log(`[Server] Updating db subscription status for verified project ${projectId}`);
       try {
-        console.log(`[Server] Processing real Stripe transaction for customer: ${clientEmail}`);
+        await setDocument("clientProjects", projectId, {
+          subscriptionPaid: true,
+          subscriptionPaidAt: paidAtStr,
+          stripeSubscriptionId: transactionIdToUse,
+          subscriptionCancelled: false
+        }, true); // merge = true
+        console.log("[Server] Database write succeeded via REST API helper.");
+      } catch (dbErr: any) {
+        console.warn("[Server] Database write failed during verification:", dbErr.message);
+      }
+    } // --- CASE 2: LIVE STRIPE CHECKOUT SESSION INITIATION ---
+    else if (stripeKey) {
+      try {
+        console.log(`[Server] Creating secure Stripe Checkout Session for client: ${clientEmail}`);
         const stripe = new Stripe(stripeKey, {
           apiVersion: "2023-10-16" as any
         });
         
-        // Parse expiry date eg "12/28"
-        const expParts = (cardExpiry || "12/28").split('/');
-        const expMonthStr = expParts[0];
-        const expYearStr = expParts[1] || "";
-        const expMonth = parseInt(expMonthStr, 10) || 12;
-        const expYear = parseInt(expYearStr.length === 2 ? `20${expYearStr}` : expYearStr, 10) || (new Date().getFullYear() + 2);
-
-        // 1. Determine a test token brand mapping as a safe fallback in test mode
-        const cleanNum = cardNumber.replace(/\s+/g, "");
-        let testToken = "tok_visa";
-        if (cleanNum.startsWith("5")) {
-          testToken = "tok_mastercard";
-        } else if (cleanNum.startsWith("3")) {
-          testToken = "tok_amex";
-        } else if (cleanNum.startsWith("6")) {
-          testToken = "tok_discover";
-        }
-
-        let tokenId = testToken;
+        const origin = body.origin || context.request.headers.get("origin") || "http://localhost:3000";
+        
+        // Find or create customer
+        let stripeCustomerId: string | undefined;
         try {
-          // Attempt to create token for the raw card
-          const token = await stripe.tokens.create({
-            card: {
-              number: cleanNum,
-              exp_month: expMonth as any,
-              exp_year: expYear as any,
-              cvc: cardCvc,
-              name: cardName || clientName || "Valued Customer",
-              address_zip: cardPostal,
-            }
-          });
-          tokenId = token.id;
-          console.log(`[Server] Raw card token created successfully: ${tokenId}`);
-        } catch (tokenErr: any) {
-          console.warn("[Server] Direct card token creation blocked by Stripe's safety policies:", tokenErr.message);
-          if (tokenErr.message.includes("unsafe") || tokenErr.message.includes("raw card") || tokenErr.message.includes("directly") || tokenErr.message.includes("PCI") || (stripeKey.startsWith("sk_test"))) {
-            console.log(`[Server] Falling back to official Stripe test token: ${testToken} for seamless Sandbox processing.`);
-            tokenId = testToken;
+          const existingCustomers = await stripe.customers.list({ email: clientEmail, limit: 1 });
+          if (existingCustomers.data && existingCustomers.data.length > 0) {
+            stripeCustomerId = existingCustomers.data[0].id;
           } else {
-            throw tokenErr;
-          }
-        }
-
-        // 2. Retrieve or create Customer in Stripe
-        const existingCustomers = await stripe.customers.list({ email: clientEmail, limit: 1 });
-        let customer;
-        if (existingCustomers.data && existingCustomers.data.length > 0) {
-          customer = existingCustomers.data[0];
-          try {
-            await stripe.customers.createSource(customer.id, { source: tokenId });
-          } catch (sourceErr: any) {
-            console.warn("[Server] Could not attach card source, creating or reuse customer as is:", sourceErr.message);
-          }
-          try {
-            await stripe.customers.update(customer.id, {
-              name: clientName || cardName || customer.name || "Valued Customer",
+            const customerObj = await stripe.customers.create({
+              email: clientEmail,
+              name: clientName || "Valued Customer",
               metadata: {
-                customerName: clientName || cardName || "Valued Customer",
-                projectName: projectName || "N/A",
-                customerEmail: clientEmail,
+                projectId: projectId
               }
             });
-          } catch (upErr) {
-            console.warn("[Server] Could not update customer metadata:", upErr);
+            stripeCustomerId = customerObj.id;
           }
-        } else {
-          customer = await stripe.customers.create({
-            email: clientEmail,
-            name: clientName || cardName || "Valued Customer",
-            source: tokenId,
-            metadata: {
-              projectName: projectName || "N/A",
-              customerName: clientName || cardName || "Valued Customer",
-              customerEmail: clientEmail,
-            }
-          });
+        } catch (custErr) {
+          console.warn("[Server] Failed to handle customer lookup, continuing without customer ID:", custErr);
         }
 
-        // 3. Create Product & price dynamically
-        const product = await stripe.products.create({
-          name: `${projectName || "Project"} - ${subscriptionTitle || "Subscription"}`,
-          description: `Zarco Studios Dedicated Subscription for ${projectName || "Project"}`,
+        const session = await stripe.checkout.sessions.create({
+          customer: stripeCustomerId,
+          customer_email: stripeCustomerId ? undefined : (clientEmail || undefined),
+          payment_method_types: ["card"],
+          line_items: [
+            {
+              price_data: {
+                currency: "eur",
+                product_data: {
+                  name: `${projectName || "Project"} - ${subscriptionTitle || "Subscription"}`,
+                  description: `Zarco Studios Dedicated Subscription for ${projectName || "Project"}`,
+                },
+                unit_amount: Math.round(Number(subscriptionPrice || 0) * 100),
+                recurring: {
+                  interval: subscriptionInterval === "yearly" ? "year" : "month",
+                },
+              },
+              quantity: 1,
+            }
+          ],
+          mode: "subscription",
+          success_url: `${origin}/project-hub/${projectId}?checkout_status=success&session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${origin}/project-hub/${projectId}?checkout_status=cancel`,
           metadata: {
-            customerName: clientName || cardName || "Valued Customer",
+            projectId,
             projectName: projectName || "N/A",
-            customerEmail: clientEmail,
+            clientEmail: clientEmail || "",
+            clientName: clientName || "",
+            subscriptionTitle: subscriptionTitle || "",
+            subscriptionPrice: String(subscriptionPrice || 0),
+            subscriptionInterval: subscriptionInterval || "monthly",
+            customTransactionId: customTransactionId,
+            lang: isPt ? "pt" : "en"
           }
         });
 
-        const price = await stripe.prices.create({
-          product: product.id,
-          unit_amount: Math.round(Number(subscriptionPrice || 0) * 100),
-          currency: "eur",
-          recurring: {
-            interval: subscriptionInterval === "yearly" ? "year" : "month",
-          },
-        });
-
-        // 4. Create real Subscription
-        const stripeSub = await stripe.subscriptions.create({
-          customer: customer.id,
-          items: [{ price: price.id }],
-          expand: ["latest_invoice.payment_intent"],
-          metadata: {
-            customerName: clientName || cardName || "Valued Customer",
-            projectName: projectName || "N/A",
-            customerEmail: clientEmail,
-            customTransactionId: customTransactionId
-          }
-        });
-
-        console.log(`[Server] Stripe subscription created successfully: ${stripeSub.id}`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            checkoutUrl: session.url,
+            sessionId: session.id
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
       } catch (stripeErr: any) {
         console.error("[Server] Stripe direct process error:", stripeErr);
         const translatedMsg = translateStripeError(stripeErr.message || "An error occurred with Stripe processing.", isPt);
@@ -228,19 +226,24 @@ export async function onRequestPost(context: any) {
           { status: 402, headers: { "Content-Type": "application/json" } }
         );
       }
-    }
-
-    // Update Database via REST API helper
-    console.log(`[Server] Updating db subscription status for project ${projectId}`);
-    try {
-      await setDocument("clientProjects", projectId, {
-        subscriptionPaid: true,
-        subscriptionPaidAt: paidAtStr,
-        stripeSubscriptionId: transactionIdToUse
-      }, true); // merge = true
-      console.log("[Server] Database write succeeded via REST API helper.");
-    } catch (dbErr: any) {
-      console.warn("[Server] Database write failed:", dbErr.message);
+    } 
+    // --- CASE 3: SANDBOX / DEVELOPMENT MOCK PAYMENTS ---
+    else {
+      console.log(`[Server] No STRIPE_SECRET_KEY found. Direct client-side billing Sandbox mock fallback activated.`);
+      
+      // Update Database via REST API helper
+      console.log(`[Server] Updating db subscription status for project ${projectId}`);
+      try {
+        await setDocument("clientProjects", projectId, {
+          subscriptionPaid: true,
+          subscriptionPaidAt: paidAtStr,
+          stripeSubscriptionId: transactionIdToUse,
+          subscriptionCancelled: false
+        }, true); // merge = true
+        console.log("[Server] Database write succeeded via REST API helper.");
+      } catch (dbErr: any) {
+        console.warn("[Server] Database write failed:", dbErr.message);
+      }
     }
 
     // Get logo from settings if possible, or use a placeholder
@@ -413,4 +416,3 @@ export async function onRequestPost(context: any) {
     );
   }
 }
-

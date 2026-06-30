@@ -364,6 +364,7 @@ interface ClientProject {
   onlyShowExpected?: boolean;
   showFullDescription?: boolean;
   showReviewsBox?: boolean;
+  showSubscriptionSection?: boolean;
   prototypesList?: PrototypeEntry[];
   hasManualTesting?: boolean;
   manualTestingUrl?: string;
@@ -397,6 +398,11 @@ interface ClientProject {
   termsDescription?: string;
   termsUrl?: string;
   showTermsButton?: boolean;
+  subscriptionCancelled?: boolean;
+  subscriptionCancelledBy?: 'customer' | 'admin';
+  subscriptionPaidCountPriorCancellation?: number | string;
+  hasSecondaryPhase?: boolean;
+  additionalPhases?: any[];
 }
 
 interface InvoiceItem {
@@ -419,11 +425,12 @@ interface Invoice {
   discountAmount: number;
   amount: number;
   currency: string;
-  status: "Draft" | "Sent" | "Paid" | "Overdue" | "Cancelled";
+  status: string;
   issueDate: string;
   dueDate: string;
   paidDate?: string;
   description: string;
+  details?: string;
   items: InvoiceItem[];
   applyVat: boolean;
   applyDiscount: boolean;
@@ -532,13 +539,13 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   
   interface AdminToast {
     id: string;
-    type: 'success' | 'error' | 'warning';
+    type: 'success' | 'error' | 'warning' | 'info';
     message: string;
   }
   const [adminToasts, setAdminToasts] = useState<AdminToast[]>([]);
   const [hasShownExpiringToast, setHasShownExpiringToast] = useState(false);
 
-  const showAdminToast = (message: string, type: 'success' | 'error' | 'warning' = 'success') => {
+  const showAdminToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') => {
     const id = 'toast-' + Math.random().toString(36).substring(2, 9);
     setAdminToasts((prev) => [...prev, { id, type, message }]);
     setTimeout(() => {
@@ -764,11 +771,11 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [sendingNewsletter, setSendingNewsletter] = useState(false);
   const [savingNewsletter, setSavingNewsletter] = useState(false);
   const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
-  const [deleteConfirm, setDeleteConfirm] = useState<{id: string, type: 'subscriber' | 'newsletter', email?: string, lang?: 'en' | 'pt'} | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{id: string, type: string, email?: string, lang?: string} | null>(null);
   const [newsletterForm, setNewsletterForm] = useState({
     subject: "",
     content: "",
-    lang: "en" as "en" | "pt" | "all" | "selected"
+    lang: "en" as string
   });
   const [archivedNewsletters, setArchivedNewsletters] = useState<any[]>([]);
   const [loadingArchives, setLoadingArchives] = useState(false);
@@ -840,7 +847,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     isActive: true,
   };
 
-  const [formData, setFormData] = useState(initialProjectState);
+  const [formData, setFormData] = useState<Partial<Project>>(initialProjectState);
 
   const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
     if (!dateStr) return null;
@@ -1235,7 +1242,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
   }
 
-  async function deleteSubscriber(id: string, email: string, lang: 'en' | 'pt') {
+  async function deleteSubscriber(id: string, email: string, lang: string) {
     setIsDeletingSubscriber(id);
     const collectionName = lang === 'pt' ? 'pt_subscribers' : 'subscribers';
     try {
@@ -2085,6 +2092,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       onlyShowExpected: false,
       showFullDescription: false,
       showReviewsBox: true,
+      showSubscriptionSection: true,
       hasManualTesting: false,
       manualTestingUrl: "",
       hasAutomatedTesting: false,
@@ -2163,6 +2171,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       onlyShowExpected: false,
       showFullDescription: false,
       showReviewsBox: true,
+      showSubscriptionSection: true,
       hasManualTesting: false,
       manualTestingUrl: "",
       hasAutomatedTesting: false,
@@ -2285,11 +2294,11 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     const phases = getProjectPhases(project);
     const activePhase = phases.find(p => p.id === phaseId) || phases[0];
 
-    const budgetLines = activePhase.budgetLines || [];
-    const customServices = activePhase.customServices || [];
+    const budgetLines: any[] = activePhase.budgetLines || [];
+    const customServices: any[] = activePhase.customServices || [];
 
     // Map budget lines to invoice items
-    const lineItems: InvoiceItem[] = budgetLines.map(line => ({
+    const lineItems: InvoiceItem[] = budgetLines.map((line: any) => ({
       description: line.item,
       details: line.description || "",
       quantity: 1,
@@ -2298,7 +2307,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }));
 
     // Map custom services to invoice items
-    const customItems: InvoiceItem[] = customServices.map(svc => ({
+    const customItems: InvoiceItem[] = customServices.map((svc: any) => ({
       description: svc.item,
       details: svc.description || "",
       quantity: svc.quantity || 1,
@@ -2311,8 +2320,8 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       allItems.push({ description: phaseId === 'secondary' ? "Secondary Phase Services" : phaseId.startsWith('phase_') ? `${activePhase.title} Services` : "Web Development Services", details: "", quantity: 1, unitPrice: 0, total: 0 });
     }
 
-    const bSubtotal = budgetLines.reduce((acc, line) => acc + (typeof line.cost === 'string' ? Number(line.cost) || 0 : line.cost), 0);
-    const cSubtotal = customServices.reduce((acc, svc) => acc + (Number(svc.cost) || 0), 0);
+    const bSubtotal = budgetLines.reduce((acc: number, line: any) => acc + (typeof line.cost === 'string' ? Number(line.cost) || 0 : line.cost), 0);
+    const cSubtotal = customServices.reduce((acc: number, svc: any) => acc + (Number(svc.cost) || 0), 0);
     const subtotal = bSubtotal + cSubtotal;
 
     const discPct = Number(activePhase.discountPercent || "0") || 0;
@@ -3240,7 +3249,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (type === "main") {
         setFormData((prev) => ({ ...prev, image: url }));
       } else {
-        setFormData((prev) => ({ ...prev, gallery: [...prev.gallery, url] }));
+        setFormData((prev) => ({ ...prev, gallery: [...(prev.gallery || []), url] }));
       }
       showAdminToast("Upload successful!", "success");
     } catch (error: any) {
@@ -3254,7 +3263,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const removeGalleryImage = (index: number) => {
     setFormData((prev) => ({
       ...prev,
-      gallery: prev.gallery.filter((_, i) => i !== index),
+      gallery: (prev.gallery || []).filter((_, i) => i !== index),
     }));
   };
 
@@ -3263,7 +3272,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     if (url) {
       setFormData((prev) => ({
         ...prev,
-        gallery: [...prev.gallery, url],
+        gallery: [...(prev.gallery || []), url],
       }));
     }
   };
@@ -3304,7 +3313,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(), // Add updatedAt for consistency
         });
-        setProjects([{ id: docRef.id, ...formData }, ...projects]);
+        setProjects([{ id: docRef.id, ...formData } as Project, ...projects]);
       } else if (view === "edit" && editingProject) {
         const projectRef = doc(db, "projects", editingProject.id);
         await updateDoc(projectRef, {
@@ -3313,7 +3322,7 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         });
         setProjects(
           projects.map((p) =>
-            p.id === editingProject.id ? { ...p, ...formData } : p,
+            p.id === editingProject.id ? ({ ...p, ...formData } as Project) : p,
           ),
         );
       }
@@ -3539,12 +3548,15 @@ export function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   }
 
   const toggleTech = (tech: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      techStack: prev.techStack.includes(tech)
-        ? prev.techStack.filter((t) => t !== tech)
-        : [...prev.techStack, tech],
-    }));
+    setFormData((prev) => {
+      const techStack = prev.techStack || [];
+      return {
+        ...prev,
+        techStack: techStack.includes(tech)
+          ? techStack.filter((t) => t !== tech)
+          : [...techStack, tech],
+      };
+    });
   };
 
   if (authChecking) {
@@ -7444,6 +7456,24 @@ SWIFT: ABCDEFGH"
                       </label>
                     </div>
 
+                    <div className="flex items-center gap-3 py-2.5 px-3 bg-white/5 border border-white/5 rounded-xl">
+                      <input
+                        type="checkbox"
+                        id="view-showSubscriptionSection"
+                        checked={editingClientProject.showSubscriptionSection !== false}
+                        onChange={async (e) => {
+                          const updatedVal = e.target.checked;
+                          const updatedProj = { ...editingClientProject, showSubscriptionSection: updatedVal };
+                          setEditingClientProject(updatedProj);
+                          await updateDoc(doc(db, "clientProjects", editingClientProject.id), { showSubscriptionSection: updatedVal });
+                        }}
+                        className="w-4 h-4 rounded text-zarco-cyan bg-[#0c1417] border-white/10 focus:ring-1 focus:ring-zarco-cyan cursor-pointer"
+                      />
+                      <label htmlFor="view-showSubscriptionSection" className="text-[10px] font-black uppercase tracking-widest text-white/70 select-none cursor-pointer">
+                        Display Subscription Section in Portal
+                      </label>
+                    </div>
+
                     {/* Share Language Selector */}
                     <div className="space-y-1.5 pt-1">
                       <label className="text-[9px] font-extrabold text-white/30 uppercase tracking-widest block">
@@ -7545,9 +7575,10 @@ SWIFT: ABCDEFGH"
                               shareLanguage: editingClientProject.shareLanguage || shareLanguage,
                               showFullDescription: editingClientProject.showFullDescription || false,
                               showReviewsBox: editingClientProject.showReviewsBox !== false,
+                              showSubscriptionSection: editingClientProject.showSubscriptionSection !== false,
                             });
                             // Refresh cache
-                            setClientProjects(prev => prev.map(p => p.id === editingClientProject.id ? { ...editingClientProject, shareLanguage: editingClientProject.shareLanguage || shareLanguage, showReviewsBox: editingClientProject.showReviewsBox !== false } : p));
+                            setClientProjects(prev => prev.map(p => p.id === editingClientProject.id ? { ...editingClientProject, shareLanguage: editingClientProject.shareLanguage || shareLanguage, showReviewsBox: editingClientProject.showReviewsBox !== false, showSubscriptionSection: editingClientProject.showSubscriptionSection !== false } : p));
                             showAdminToast("Sharing details committed successfully!", "success");
                           } catch (err) {
                             console.error(err);
@@ -9152,6 +9183,24 @@ SWIFT: ABCDEFGH"
                     <div className="flex items-center gap-3 py-3 px-4 bg-white/5 border border-white/5 rounded-xl">
                       <input
                         type="checkbox"
+                        id="showSubscriptionSection"
+                        checked={editingClientProject.showSubscriptionSection !== false}
+                        onChange={(e) =>
+                          setEditingClientProject({
+                            ...editingClientProject,
+                            showSubscriptionSection: e.target.checked,
+                          })
+                        }
+                        className="w-4 h-4 rounded text-zarco-cyan bg-[#0c1417] border-white/10 focus:ring-1 focus:ring-zarco-cyan"
+                      />
+                      <label htmlFor="showSubscriptionSection" className="text-xs font-black uppercase tracking-widest text-white/80 select-none cursor-pointer border-none bg-transparent">
+                        Display Subscription Section in Portal
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-3 py-3 px-4 bg-white/5 border border-white/5 rounded-xl">
+                      <input
+                        type="checkbox"
                         id="showTermsButton"
                         checked={editingClientProject.showTermsButton || false}
                         onChange={(e) =>
@@ -9617,11 +9666,11 @@ SWIFT: ABCDEFGH"
                   const lines = activePhase.budgetLines || [];
                   const customServices = activePhase.customServices || [];
 
-                  const baseSubtotal = lines.reduce((acc, line) => {
+                  const baseSubtotal = lines.reduce((acc: number, line: any) => {
                     return acc + (Number(line.cost) || 0);
                   }, 0);
 
-                  const customSubtotal = customServices.reduce((acc, item) => {
+                  const customSubtotal = customServices.reduce((acc: number, item: any) => {
                     return acc + (Number(item.cost) || 0);
                   }, 0);
 
@@ -9755,18 +9804,20 @@ SWIFT: ABCDEFGH"
                           <Button
                             type="button"
                             onClick={() => {
+                              const currentProj = editingClientProject as ClientProject;
+                              if (!currentProj) return;
                               if (phases.length === 1) {
                                 const updated = {
-                                  ...editingClientProject,
+                                  ...currentProj,
                                   hasSecondaryPhase: true,
                                   secondaryBudgetLines: [],
                                   secondaryCustomServices: [],
                                   secondaryDiscountPercent: "0",
                                   secondaryApplyVat: true,
                                   secondaryVatPercent: "23",
-                                  secondaryPaidStatus: "Pending"
+                                  secondaryPaidStatus: "Pending" as const
                                 };
-                                setEditingClientProject(updated);
+                                setEditingClientProject(updated as ClientProject);
                                 setAdminPricingActiveTab('secondary');
                               } else {
                                 const nextPhaseNum = phases.length + 1;
@@ -9777,15 +9828,15 @@ SWIFT: ABCDEFGH"
                                   discountPercent: "0",
                                   applyVat: true,
                                   vatPercent: "23",
-                                  paidStatus: "Pending",
+                                  paidStatus: "Pending" as const,
                                   price: ""
                                 };
-                                const updatedPhases = [...(editingClientProject.additionalPhases || []), newPhaseObj];
+                                const updatedPhases = [...(currentProj.additionalPhases || []), newPhaseObj];
                                 const updated = {
-                                  ...editingClientProject,
+                                  ...currentProj,
                                   additionalPhases: updatedPhases
                                 };
-                                setEditingClientProject(updated);
+                                setEditingClientProject(updated as ClientProject);
                                 setAdminPricingActiveTab(`phase_${updatedPhases.length - 1}`);
                               }
                             }}
@@ -9835,7 +9886,7 @@ SWIFT: ABCDEFGH"
                               Standard Deliverables ({lines.length})
                             </h4>
                             <div className="space-y-3">
-                              {lines.map((line, idx) => (
+                              {lines.map((line: any, idx: number) => (
                                 <div key={`dl-${idx}`} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-[#0c1417]/40 rounded-2xl border border-white/5 text-left">
                                   <div className="space-y-1 text-left">
                                     <div className="flex items-center gap-2 flex-wrap">
@@ -9876,7 +9927,7 @@ SWIFT: ABCDEFGH"
                               Custom services & bespoke options ({customServices.length})
                             </h4>
                             <div className="space-y-3 font-medium">
-                              {customServices.map((item, idx) => (
+                              {customServices.map((item: any, idx: number) => (
                                 <div key={`cs-${item.id || idx}`} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-zarco-cyan/[0.02] rounded-2xl border border-zarco-cyan/20 text-left">
                                   <div className="space-y-1 text-left">
                                     <div className="flex items-center gap-2 flex-wrap">
@@ -11860,7 +11911,7 @@ SWIFT: ABCDEFGH"
         const activePhase = phases.find(p => p.id === adminEstimatorMode) || phases[0];
 
         const lines = activePhase.budgetLines || [];
-        const baseSubtotal = lines.reduce((acc, line, idx) => {
+        const baseSubtotal = lines.reduce((acc: number, line: any, idx: number) => {
           const isSelected = !line.isOptional || !!adminSelectedAddons[idx];
           if (isSelected) {
             return acc + (Number(line.cost) || 0);
@@ -11870,7 +11921,7 @@ SWIFT: ABCDEFGH"
 
         const customServices = activePhase.customServices || [];
 
-        const customSubtotal = customServices.reduce((acc, item) => {
+        const customSubtotal = customServices.reduce((acc: number, item: any) => {
           return acc + (Number(item.cost) || 0);
         }, 0);
 
@@ -12084,7 +12135,7 @@ SWIFT: ABCDEFGH"
                         Added Custom Services ({adminEstimatorMode === 'secondary' ? 'Secondary' : 'Primary'})
                       </div>
                       <div className="space-y-2">
-                        {customServices.map((item, idx) => (
+                        {customServices.map((item: any, idx: number) => (
                           <div
                             key={`modal-item-${item.id}-${idx}`}
                             className="flex items-center justify-between p-4 rounded-xl border border-zarco-cyan/20 bg-zarco-cyan/[0.02] transition-all"
@@ -12119,21 +12170,21 @@ SWIFT: ABCDEFGH"
                                 type="button"
                                 onClick={() => {
                                   if (adminEstimatorMode === 'secondary') {
-                                    const updated = (editingClientProject.secondaryCustomServices || []).filter(c => c.id !== item.id);
-                                    setEditingClientProject({ ...editingClientProject, secondaryCustomServices: updated });
+                                    const updated = ((editingClientProject as ClientProject).secondaryCustomServices || []).filter((c: any) => c.id !== item.id);
+                                    setEditingClientProject({ ...(editingClientProject as ClientProject), secondaryCustomServices: updated });
                                   } else if (adminEstimatorMode.startsWith('phase_')) {
                                     const idxPhase = parseInt(adminEstimatorMode.split('_')[1], 10);
-                                    const api = [...(editingClientProject.additionalPhases || [])];
+                                    const api = [...((editingClientProject as ClientProject).additionalPhases || [])];
                                     if (api[idxPhase]) {
-                                      api[idxPhase].customServices = (api[idxPhase].customServices || []).filter(c => c.id !== item.id);
+                                      api[idxPhase].customServices = (api[idxPhase].customServices || []).filter((c: any) => c.id !== item.id);
                                     }
                                     setEditingClientProject({
-                                      ...editingClientProject,
+                                      ...(editingClientProject as ClientProject),
                                       additionalPhases: api
                                     });
                                   } else {
-                                    const updated = (editingClientProject.customServices || []).filter(c => c.id !== item.id);
-                                    setEditingClientProject({ ...editingClientProject, customServices: updated });
+                                    const updated = ((editingClientProject as ClientProject).customServices || []).filter((c: any) => c.id !== item.id);
+                                    setEditingClientProject({ ...(editingClientProject as ClientProject), customServices: updated });
                                   }
                                 }}
                                 className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center hover:bg-red-500/20 hover:text-red-500 transition-all cursor-pointer"
@@ -12159,7 +12210,7 @@ SWIFT: ABCDEFGH"
                   </div>
 
                   <div className="space-y-2 max-w-5xl">
-                    {lines.map((line, idx) => {
+                    {lines.map((line: any, idx: number) => {
                       const isSelected = !line.isOptional || !!adminSelectedAddons[idx];
                       return (
                         <div
@@ -12224,32 +12275,32 @@ SWIFT: ABCDEFGH"
                           <button
                             type="button"
                             onClick={() => {
-                              const updated = lines.filter((_, idx2) => idx2 !== idx);
+                              const updated = lines.filter((_any: any, idx2: number) => idx2 !== idx);
                               if (adminEstimatorMode === 'secondary') {
                                 setEditingClientProject({
-                                  ...editingClientProject,
+                                  ...(editingClientProject as ClientProject),
                                   secondaryBudgetLines: updated
                                 });
                               } else if (adminEstimatorMode.startsWith('phase_')) {
                                 const idxPhase = parseInt(adminEstimatorMode.split('_')[1], 10);
-                                const api = [...(editingClientProject.additionalPhases || [])];
+                                const api = [...((editingClientProject as ClientProject).additionalPhases || [])];
                                 if (api[idxPhase]) {
                                   api[idxPhase].budgetLines = updated;
                                 }
                                 setEditingClientProject({
-                                  ...editingClientProject,
+                                  ...(editingClientProject as ClientProject),
                                   additionalPhases: api
                                 });
                               } else {
                                 setEditingClientProject({
-                                  ...editingClientProject,
+                                  ...(editingClientProject as ClientProject),
                                   budgetLines: updated
                                 });
                               }
                               // Re-key selected state
                               const newSelected: Record<number, boolean> = {};
                               let newIdx = 0;
-                              lines.forEach((_, oldIdx) => {
+                              lines.forEach((_any: any, oldIdx: number) => {
                                 if (oldIdx !== idx) {
                                   newSelected[newIdx] = !!adminSelectedAddons[oldIdx];
                                   newIdx++;
@@ -12406,7 +12457,7 @@ SWIFT: ABCDEFGH"
                   {/* Break items flow list */}
                   <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
                     {/* Primary Deliverables selected */}
-                    {lines.filter((_, idx) => !lines[idx].isOptional || !!adminSelectedAddons[idx]).map((line, idx) => (
+                    {lines.filter((_line: any, idx: number) => !lines[idx].isOptional || !!adminSelectedAddons[idx]).map((line: any, idx: number) => (
                       <div key={`summary-b-${idx}`} className="flex justify-between items-start text-xs text-white/60">
                         <span className="uppercase tracking-wider text-[9px] text-[#4fd1dc]/80 font-bold max-w-[70%] text-left">
                           • {line.item}
@@ -12417,7 +12468,7 @@ SWIFT: ABCDEFGH"
                       </div>
                     ))}
                     {/* Custom services added */}
-                    {(editingClientProject.customServices || []).map((item, idx) => (
+                    {((editingClientProject as ClientProject).customServices || []).map((item: any, idx: number) => (
                       <div key={`summary-c-${idx}`} className="flex justify-between items-start text-xs text-white/80">
                         <span className="uppercase tracking-wider text-[9px] text-zarco-cyan font-bold max-w-[70%] text-left">
                           ✨ {item.item}
@@ -12427,7 +12478,7 @@ SWIFT: ABCDEFGH"
                         </span>
                       </div>
                     ))}
-                    {lines.filter((_, idx) => !lines[idx].isOptional || !!adminSelectedAddons[idx]).length === 0 && (editingClientProject.customServices || []).length === 0 && (
+                    {lines.filter((_line: any, idx: number) => !lines[idx].isOptional || !!adminSelectedAddons[idx]).length === 0 && ((editingClientProject as ClientProject).customServices || []).length === 0 && (
                       <div className="text-center py-4 text-white/20 italic text-[10px] uppercase font-bold tracking-widest">
                         No Deliverables Simulated
                       </div>
@@ -12492,7 +12543,7 @@ SWIFT: ABCDEFGH"
                   <Button
                     type="button"
                     onClick={async () => {
-                      const selectedLines = lines.filter((_, idx) => !lines[idx].isOptional || !!adminSelectedAddons[idx]);
+                      const selectedLines = lines.filter((_line: any, idx: number) => !lines[idx].isOptional || !!adminSelectedAddons[idx]);
                       const finalPrice = grandTotalVal.toFixed(2);
                       
                       let updatedProj: ClientProject;

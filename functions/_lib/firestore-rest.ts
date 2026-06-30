@@ -1,8 +1,43 @@
 import firebaseConfig from "../../firebase-applet-config.json";
+import { GoogleAuth } from "google-auth-library";
 
 const projectId = firebaseConfig.projectId;
 const databaseId = firebaseConfig.firestoreDatabaseId;
 const apiKey = firebaseConfig.apiKey;
+
+let googleAuth: GoogleAuth | null = null;
+
+async function getAccessToken(): Promise<string | null> {
+  if (typeof process === "undefined" || !process.env) {
+    return null;
+  }
+  try {
+    if (!googleAuth) {
+      const options: any = {
+        scopes: ["https://www.googleapis.com/auth/datastore", "https://www.googleapis.com/auth/cloud-platform"]
+      };
+
+      // Support inline service account JSON in .env for local development
+      const serviceAccountStr = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+      if (serviceAccountStr) {
+        try {
+          options.credentials = JSON.parse(serviceAccountStr.trim());
+          console.log("[Server] Loaded explicit service account credentials from environment variables.");
+        } catch (jsonErr: any) {
+          console.error("[Server] Failed to parse service account JSON from environment variable:", jsonErr.message);
+        }
+      }
+
+      googleAuth = new GoogleAuth(options);
+    }
+    const client = await googleAuth.getClient();
+    const tokenResponse = await client.getAccessToken();
+    return tokenResponse.token || null;
+  } catch (err: any) {
+    console.warn("[Server] Google Auth credentials fallback active. Running without administrative bypass token:", err.message);
+    return null;
+  }
+}
 
 function toFirestoreValue(val: any): any {
   if (val === null || val === undefined) {
@@ -81,8 +116,9 @@ function fromFirestoreFields(fields: any): any {
 export async function getDocument(collectionName: string, docId: string, idToken?: string | null) {
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/${collectionName}/${encodeURIComponent(docId)}?key=${apiKey}`;
   const headers: any = {};
-  if (idToken) {
-    headers["Authorization"] = `Bearer ${idToken}`;
+  const token = idToken || await getAccessToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
   const res = await fetch(url, { headers });
   if (res.status === 404) return null;
@@ -111,8 +147,9 @@ export async function setDocument(collectionName: string, docId: string, data: a
   const headers: any = {
     "Content-Type": "application/json"
   };
-  if (idToken) {
-    headers["Authorization"] = `Bearer ${idToken}`;
+  const token = idToken || await getAccessToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
   const res = await fetch(url, {
     method: "PATCH",
@@ -137,8 +174,9 @@ export async function listDocuments(collectionName: string, idToken?: string | n
   const headers: any = {
     "Content-Type": "application/json"
   };
-  if (idToken) {
-    headers["Authorization"] = `Bearer ${idToken}`;
+  const token = idToken || await getAccessToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
   const res = await fetch(url, {
     method: "POST",

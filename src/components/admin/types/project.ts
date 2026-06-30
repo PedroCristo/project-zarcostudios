@@ -99,6 +99,7 @@ export interface ClientProject {
   onlyShowExpected?: boolean;
   showFullDescription?: boolean;
   showReviewsBox?: boolean;
+  showSubscriptionSection?: boolean;
   prototypesList?: PrototypeEntry[];
   hasManualTesting?: boolean;
   manualTestingUrl?: string;

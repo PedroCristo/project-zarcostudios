@@ -44,6 +44,14 @@ export default function App() {
   });
 
   useEffect(() => {
+    // If the path starts with /project-hub/, redirect to the hash-based URL
+    if (window.location.pathname.startsWith('/project-hub/')) {
+      const pId = window.location.pathname.replace('/project-hub/', '');
+      const search = window.location.search;
+      window.location.replace(`${window.location.origin}/#project-hub/${pId}${search}`);
+      return;
+    }
+
     async function testConnection() {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));

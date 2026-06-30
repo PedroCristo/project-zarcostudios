@@ -116,6 +116,7 @@ interface ClientProject {
   onlyShowExpected?: boolean;
   showFullDescription?: boolean;
   showReviewsBox?: boolean;
+  showSubscriptionSection?: boolean;
   feedbacksList?: FeedbackEntry[];
   prototypesList?: PrototypeEntry[];
   hasManualTesting?: boolean;
@@ -144,6 +145,16 @@ interface ClientProject {
   subFeaturesSecurity?: boolean;
   subFeaturesHosting?: boolean;
   subscriptionFeatures?: string[];
+  secondaryPrice?: string | number;
+  stripeSubscriptionId?: string;
+  secondaryBudgetLines?: BudgetLine[];
+  secondaryCustomServices?: any[];
+  secondaryDiscountPercent?: string | number;
+  secondaryApplyVat?: boolean;
+  secondaryVatPercent?: string | number;
+  secondaryPaidStatus?: string;
+  hasSecondaryPhase?: boolean;
+  additionalPhases?: any[];
 }
 
 interface Client {
@@ -208,7 +219,7 @@ export function ProjectHub({ projectId }: { projectId: string }) {
   const [reviewConsent, setReviewConsent] = useState(false);
 
   // Interactive Pricing & Billing custom states
-  const [clientPricingActiveTab, setClientPricingActiveTab] = useState<'primary' | 'secondary'>('primary');
+  const [clientPricingActiveTab, setClientPricingActiveTab] = useState<string>('primary');
   const [showUnsubscribeModal, setShowUnsubscribeModal] = useState<boolean>(false);
   const [subscriptionPaid, setSubscriptionPaid] = useState<boolean>(() => {
     return localStorage.getItem(`subscribed_${projectId}`) === 'true';
@@ -236,7 +247,7 @@ export function ProjectHub({ projectId }: { projectId: string }) {
   const [discountPercent, setDiscountPercent] = useState<string>('0');
   const [vatPercent, setVatPercent] = useState<string>('23');
   const [applyVat, setApplyVat] = useState<boolean>(true);
-  const [customServices, setCustomServices] = useState<{ id: string; item: string; description?: string; cost: number; isOptional: boolean; quantity?: number; hours?: number; unitPrice?: number }[]>([]);
+  const [customServices, setCustomServices] = useState<{ id: string; item: string; description?: string; cost: number; isOptional?: boolean; quantity?: number; hours?: number; unitPrice?: number }[]>([]);
   const [showEstimatorModal, setShowEstimatorModal] = useState<boolean>(false);
   const [newServiceName, setNewServiceName] = useState<string>('');
   const [newServiceDesc, setNewServiceDesc] = useState<string>('');
@@ -244,6 +255,10 @@ export function ProjectHub({ projectId }: { projectId: string }) {
   const [newServiceQuantity, setNewServiceQuantity] = useState<string>('1');
   const [newServiceHours, setNewServiceHours] = useState<string>('');
   const [newServiceIsOptional, setNewServiceIsOptional] = useState<boolean>(false);
+
+  // Stripe Checkout Session Verification States
+  const [isVerifyingCheckout, setIsVerifyingCheckout] = useState<boolean>(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   // Toast systems
   interface ToastItem {
@@ -274,6 +289,95 @@ export function ProjectHub({ projectId }: { projectId: string }) {
     }
   }, [i18n]);
 
+  // Handle Stripe Checkout Redirect and Verification
+  useEffect(() => {
+    async function verifyCheckout() {
+      const hashParts = window.location.hash.split('?');
+      const searchPart = hashParts[1] || window.location.search || '';
+      const urlParams = new URLSearchParams(searchPart);
+      const checkoutStatus = urlParams.get('checkout_status');
+      const sessionId = urlParams.get('session_id');
+
+      if (checkoutStatus === 'success' && sessionId) {
+        setIsVerifyingCheckout(true);
+        setVerifyError(null);
+        try {
+          console.log(`[Stripe Checkout] Verifying session: ${sessionId}`);
+          const apiResponse = await fetch('/api/subscriptions/confirm-payment', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'verify',
+              sessionId: sessionId,
+              projectId: projectId,
+              lang: isPt ? 'pt' : 'en'
+            }),
+          });
+
+          if (!apiResponse.ok) {
+            const errorData = await apiResponse.json();
+            throw new Error(errorData.error || errorData.detail || "Verification failed");
+          }
+
+          const resData = await apiResponse.json();
+          const finalTxnId = resData.transactionId || sessionId;
+          
+          localStorage.setItem(`subscribed_${projectId}`, 'true');
+          localStorage.setItem(`sub_txn_${projectId}`, finalTxnId);
+          
+          setSubTransactionId(finalTxnId);
+          setSubscriptionPaid(true);
+
+          setProject(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              subscriptionPaid: true,
+              subscriptionPaidAt: resData.paidAt || new Date().toISOString(),
+              subscriptionCancelled: false
+            };
+          });
+
+          showToast(
+            isPt 
+              ? 'Subscrição confirmada com sucesso! Obrigado pelo pagamento.' 
+              : 'Subscription verified and activated successfully! Thank you.', 
+            'success'
+          );
+
+          // Remove query parameters from url
+          const cleanUrl = window.location.pathname + window.location.hash.split('?')[0];
+          window.history.replaceState({}, document.title, cleanUrl);
+        } catch (err: any) {
+          console.error('[Stripe Checkout Error]', err);
+          setVerifyError(err.message || "Failed to verify transaction");
+          showToast(
+            isPt 
+              ? `Falha na verificação da subscrição: ${err.message}` 
+              : `Subscription verification failed: ${err.message}`, 
+            'error'
+          );
+        } finally {
+          setIsVerifyingCheckout(false);
+        }
+      } else if (checkoutStatus === 'cancel') {
+        showToast(
+          isPt 
+            ? 'Pagamento cancelado. Pode tentar novamente quando desejar.' 
+            : 'Payment cancelled. You can try subscribing again anytime.', 
+          'info'
+        );
+        const cleanUrl = window.location.pathname + window.location.hash.split('?')[0];
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    }
+    if (projectId) {
+      verifyCheckout();
+    }
+  }, [projectId, isPt]);
+
   useEffect(() => {
     async function loadData() {
       setLoading(true);
@@ -289,6 +393,11 @@ export function ProjectHub({ projectId }: { projectId: string }) {
         }
 
         const projectData = { id: projSnap.id, ...projSnap.data() } as ClientProject;
+        if (!projectData.isShared) {
+          setErrorMsg(isPt ? 'Portal de projeto não está ativo ou foi desativado pelo administrador.' : 'Project portal is not active or has been disabled by the administrator.');
+          setLoading(false);
+          return;
+        }
         setProject(projectData);
         if (projectData.subscriptionPaid !== undefined) {
           setSubscriptionPaid(!!projectData.subscriptionPaid);
@@ -753,6 +862,19 @@ export function ProjectHub({ projectId }: { projectId: string }) {
           <div className="w-12 h-12 border-4 border-zarco-cyan border-t-transparent rounded-full animate-spin" />
           <p className="text-[10px] font-black uppercase tracking-widest text-white/40">
             {isPt ? 'A carregar portal do cliente...' : 'Loading Client Workspace...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isVerifyingCheckout) {
+    return (
+      <div className="pt-40 min-h-screen flex items-center justify-center bg-zarco-black text-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-[#22d3ee] border-t-transparent rounded-full animate-spin" />
+          <p className="text-[10px] font-black uppercase tracking-widest text-[#22d3ee] animate-pulse">
+            {isPt ? 'A verificar o pagamento seguro com o Stripe...' : 'Verifying secure payment via Stripe...'}
           </p>
         </div>
       </div>
@@ -1561,7 +1683,7 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-white/[0.03]">
-                              {lies.map((line, idx) => {
+                              {lies.map((line: BudgetLine, idx: number) => {
                                 const isSelected = isSec || !line.isOptional || !!selectedAddons[idx];
                                 return (
                                   <tr 
@@ -1604,7 +1726,7 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                                   </tr>
                                 );
                               })}
-                              {cServices.map((item, idx) => {
+                              {cServices.map((item: any, idx: number) => {
                                 return (
                                   <tr 
                                     key={`custom-${item.id}-${idx}`} 
@@ -1756,7 +1878,7 @@ export function ProjectHub({ projectId }: { projectId: string }) {
         </div>
 
         {/* Adicionado: Subscription Checkout Form Panel */}
-        {project.hasSubscription && (
+        {project.hasSubscription && project.showSubscriptionSection !== false && (
           <div className="mb-12 animate-fade-in text-left">
             <Card className="bg-[#080d0f] border-white/5 rounded-[2.5rem] p-8 md:p-12 relative overflow-hidden">
               <div className="absolute top-0 left-0 bg-zarco-cyan text-black px-8 py-2 text-[10px] font-black uppercase tracking-widest rounded-br-2xl flex items-center gap-1.5">
@@ -1943,125 +2065,57 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                     </div>
                   </div>
 
-                  {/* Right Column: Checkout Form with Stripe Mock Integration */}
-                  <div className="lg:col-span-7 bg-[#0c1417]/30 border border-white/5 rounded-[2rem] p-6 md:p-8 space-y-5">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-white border-b border-white/5 pb-4 flex items-center justify-between">
-                      <span>🏦 {isPt ? 'FORMULÁRIO DE CHECKOUT' : 'SECURE CHECKOUT'}</span>
-                      <span className="text-[9px] text-[#4fd1dc] font-black uppercase bg-[#4fd1dc]/10 px-2.5 py-1 rounded">Stripe Gateway</span>
-                    </h4>
+                  {/* Right Column: Sleek & Secure Subscription Summary & Stripe Redirect */}
+                  <div className="lg:col-span-7 bg-[#0c1417]/30 border border-white/5 rounded-[2.5rem] p-6 md:p-8 flex flex-col justify-between min-h-[380px] space-y-6">
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-widest text-white border-b border-white/5 pb-4 flex items-center justify-between">
+                        <span>🏦 {isPt ? 'PAGAMENTO SEGURO' : 'SECURE CHECKOUT'}</span>
+                        <span className="text-[9px] text-[#4fd1dc] font-black uppercase bg-[#4fd1dc]/10 px-2.5 py-1 rounded">Stripe Gateway</span>
+                      </h4>
 
-                    {subError && (
-                      <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider rounded-xl animate-bounce">
-                        ⚠️ {subError}
-                      </div>
-                    )}
-
-                    <div className="space-y-4">
-                      {/* Name on card */}
-                      <div className="space-y-2 text-left">
-                        <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">
-                          {isPt ? 'Nome no Cartão' : 'Cardholder Name'}
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={subCardName}
-                          onChange={(e) => setSubCardName(e.target.value)}
-                          placeholder={isPt ? "NOME IGUAL AO CARTÃO" : "JOHN DOE"}
-                          className="w-full bg-[#080d0f] border border-white/10 hover:border-white/20 focus:border-zarco-cyan/50 text-white rounded-xl h-12 px-4 text-xs font-bold outline-none tracking-widest uppercase transition-all animate-none"
-                        />
-                      </div>
-
-                      {/* Card number */}
-                      <div className="space-y-2 text-left">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest">
-                            {isPt ? 'Número do Cartão' : 'Credit Card Number'}
-                          </label>
-                          {/* Live credit card brand indicator */}
-                          {(() => {
-                            const trimmed = subCardNumber.replace(/\s+/g, '');
-                            if (trimmed.startsWith('4')) {
-                              return <span className="text-[9px] text-green-400 font-extrabold tracking-widest bg-green-500/10 px-2 py-0.5 rounded uppercase">Visa detected</span>;
-                            } else if (trimmed.startsWith('5')) {
-                              return <span className="text-[9px] text-orange-400 font-extrabold tracking-widest bg-orange-500/10 px-2 py-0.5 rounded uppercase font-sans">Mastercard detected</span>;
-                            } else if (trimmed.startsWith('3')) {
-                              return <span className="text-[9px] text-zarco-cyan font-extrabold tracking-widest bg-zarco-cyan/10 px-2 py-0.5 rounded uppercase font-sans">Amex detected</span>;
-                            }
-                            return null;
-                          })()}
+                      {subError && (
+                        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider rounded-xl my-4 animate-bounce">
+                          ⚠️ {subError}
                         </div>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            required
-                            maxLength={19}
-                            value={subCardNumber}
-                            onChange={(e) => {
-                              // Auto format input with spaces every 4 digits
-                              const trimmed = e.target.value.replace(/\D/g, '');
-                              const matches = trimmed.match(/.{1,4}/g);
-                              setSubCardNumber(matches ? matches.join(' ') : '');
-                            }}
-                            placeholder="0000 0000 0000 0000"
-                            className="w-full bg-[#080d0f] border border-white/10 hover:border-white/20 focus:border-zarco-cyan/50 text-white rounded-xl h-12 pl-12 pr-4 text-xs font-mono font-bold outline-none tracking-widest transition-all"
-                          />
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 text-xs">
-                            💳
-                          </span>
-                        </div>
-                      </div>
+                      )}
 
-                      {/* Expiry, CVC & Zip */}
-                      <div className="grid grid-cols-3 gap-4 font-mono">
-                        <div className="space-y-2 text-left">
-                          <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest font-sans">
-                            {isPt ? 'Validade' : 'Expiry Date'}
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            maxLength={5}
-                            value={subCardExpiry}
-                            onChange={(e) => {
-                              // Format MM/YY
-                              const trimmed = e.target.value.replace(/\D/g, '');
-                              const currentVal = trimmed.length > 2 ? `${trimmed.substring(0, 2)}/${trimmed.substring(2, 4)}` : trimmed;
-                              setSubCardExpiry(currentVal);
-                            }}
-                            placeholder="MM/YY"
-                            className="w-full bg-[#080d0f] border border-white/10 hover:border-white/20 focus:border-zarco-cyan/50 text-white rounded-xl h-12 px-4 text-xs font-mono font-bold text-center outline-none tracking-widest transition-all"
-                          />
+                      <div className="space-y-4 mt-6 font-sans">
+                        <div className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl space-y-3.5">
+                          <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-white/50">
+                            <span>{isPt ? 'Descrição do Plano' : 'Selected Plan'}</span>
+                            <span className="text-white font-black">{project.subscriptionTitle || (isPt ? 'Serviço de Acompanhamento' : 'Support Plan')}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-white/50">
+                            <span>{isPt ? 'Ciclo de Faturamento' : 'Billing Frequency'}</span>
+                            <span className="text-zarco-cyan font-black">{project.subscriptionInterval === "yearly" ? (isPt ? "Anual" : "Yearly") : (isPt ? "Mensal" : "Monthly")}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-white/50">
+                            <span>{isPt ? 'Método de Pagamento' : 'Payment Method'}</span>
+                            <span className="text-white font-black flex items-center gap-1.5">💳 Stripe / Card</span>
+                          </div>
+                          <div className="border-t border-white/5 pt-3.5 flex justify-between items-center">
+                            <span className="text-xs font-black uppercase tracking-widest text-white/40">{isPt ? 'TOTAL A PAGAR' : 'TOTAL DUE'}</span>
+                            <span className="text-xl font-black text-white">
+                              €{Number(project.subscriptionPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              <span className="text-[10px] text-white/40 font-bold uppercase tracking-widest ml-1">
+                                / {project.subscriptionInterval === "yearly" ? (isPt ? "ano" : "yr") : (isPt ? "mês" : "mo")}
+                              </span>
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="space-y-2 text-left">
-                          <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest font-sans">
-                            CVC
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            maxLength={4}
-                            value={subCardCvc}
-                            onChange={(e) => setSubCardCvc(e.target.value.replace(/\D/g, ''))}
-                            placeholder="000"
-                            className="w-full bg-[#080d0f] border border-white/10 hover:border-white/20 focus:border-zarco-cyan/50 text-white rounded-xl h-12 px-4 text-xs font-mono font-bold text-center outline-none tracking-widest transition-all"
-                          />
-                        </div>
-
-                        <div className="space-y-2 text-left">
-                          <label className="text-[10px] font-bold text-white/30 uppercase tracking-widest font-sans">
-                            {isPt ? 'Cód. Postal' : 'ZIP / Postal'}
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            maxLength={8}
-                            value={subCardPostal}
-                            onChange={(e) => setSubCardPostal(e.target.value.toUpperCase())}
-                            placeholder="1000-000"
-                            className="w-full bg-[#080d0f] border border-white/10 hover:border-white/20 focus:border-zarco-cyan/50 text-white rounded-xl h-12 px-4 text-xs font-sans font-bold text-center outline-none tracking-widest transition-all"
-                          />
+                        <div className="flex items-start gap-3 p-4 bg-emerald-500/[0.02] border border-emerald-500/10 rounded-2xl">
+                          <span className="text-emerald-400 text-sm">🔒</span>
+                          <div className="space-y-0.5 text-left">
+                            <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest block">
+                              {isPt ? 'Conexão Encriptada SSL' : 'End-to-End SSL Encryption'}
+                            </span>
+                            <p className="text-[9px] text-white/30 uppercase font-bold tracking-wider leading-relaxed">
+                              {isPt 
+                                ? 'Será redirecionado de forma segura para o Stripe Checkout oficial para concluir a sua transação com segurança.' 
+                                : 'You will be securely redirected to official Stripe Checkout to finalize your credentials and transaction.'}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2070,26 +2124,7 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                       type="button"
                       disabled={subIsProcessing}
                       onClick={async () => {
-                        // Validator inputs
                         setSubError(null);
-                        if (!subCardName.trim()) {
-                          setSubError(isPt ? "Indique o Nome do Titular do Cartão." : "Please provide the Cardholder Name.");
-                          return;
-                        }
-                        const cleanCard = subCardNumber.replace(/\s+/g, '');
-                        if (cleanCard.length < 15) {
-                          setSubError(isPt ? "Número de Cartão inválido." : "Card number seems incorrect or too short.");
-                          return;
-                        }
-                        if (subCardExpiry.length < 5 || !subCardExpiry.includes("/")) {
-                          setSubError(isPt ? "Data de validade deve possuir formato MM/YY." : "Format expiration date as MM/YY.");
-                          return;
-                        }
-                        if (subCardCvc.length < 3) {
-                          setSubError(isPt ? "CVC incorrecto." : "Invalid security CVC code.");
-                          return;
-                        }
-
                         setSubIsProcessing(true);
                         try {
                           let paidAtServerStr = new Date().toISOString();
@@ -2109,14 +2144,8 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                               subscriptionTitle: project.subscriptionTitle || "",
                               subscriptionPrice: project.subscriptionPrice || 0,
                               subscriptionInterval: project.subscriptionInterval || "monthly",
-                              transactionId: finalTxnId, // fallback random identifier
-                              lang: isPt ? "pt" : "en",
-                              // Pass real card values for secure server-side Stripe processing
-                              cardNumber: subCardNumber,
-                              cardExpiry: subCardExpiry,
-                              cardCvc: subCardCvc,
-                              cardName: subCardName,
-                              cardPostal: subCardPostal
+                              origin: window.location.origin,
+                              lang: isPt ? "pt" : "en"
                             }),
                           });
 
@@ -2126,6 +2155,13 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                           }
 
                           const resData = await apiResponse.json();
+                          
+                          // If Stripe Checkout Session is active and returned, redirect securely
+                          if (resData.checkoutUrl) {
+                            window.location.href = resData.checkoutUrl;
+                            return; // Wait for the Stripe redirect to occur
+                          }
+
                           if (resData.paidAt) {
                             paidAtServerStr = resData.paidAt;
                           }
@@ -2178,11 +2214,11 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                       {subIsProcessing ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>{isPt ? 'A PROCESSAR NO STRIPE...' : 'SECURE PROCESSING STREAM...'}</span>
+                          <span>{isPt ? 'A REDIRECIONAR PARA O STRIPE...' : 'REDIRECTING TO STRIPE...'}</span>
                         </>
                       ) : (
                         <>
-                          <span>{isPt ? `SUBSCREVER PLANO • €${Number(project.subscriptionPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : `SUBSCRIBE NOW • €${Number(project.subscriptionPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}</span>
+                          <span>{isPt ? `PAGAR SEGURO COM STRIPE • €${Number(project.subscriptionPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : `PAY SECURELY WITH STRIPE • €${Number(project.subscriptionPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}</span>
                         </>
                       )}
                     </Button>
@@ -3659,7 +3695,7 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                     {/* Invoice items break list */}
                     <div className="space-y-4 max-h-[300px] overflow-y-auto select-all pr-1">
                       {/* Primary Deliverables selected */}
-                      {(project.budgetLines || []).filter((_, idx) => !project.budgetLines[idx].isOptional || !!selectedAddons[idx]).map((line, idx) => (
+                      {(project.budgetLines || []).filter((line, idx) => !line.isOptional || !!selectedAddons[idx]).map((line, idx) => (
                         <div key={`summary-b-${idx}`} className="flex justify-between items-start text-xs text-white/60">
                           <span className="uppercase tracking-wider text-[9px] text-[#4fd1dc]/80 font-bold max-w-[70%]">
                             • {line.item}
@@ -3681,7 +3717,7 @@ export function ProjectHub({ projectId }: { projectId: string }) {
                         </div>
                       ))}
                       {/* No item fallback */}
-                      {(project.budgetLines || []).filter((_, idx) => !project.budgetLines[idx].isOptional || !!selectedAddons[idx]).length === 0 && customServices.length === 0 && (
+                      {(project.budgetLines || []).filter((line, idx) => !line.isOptional || !!selectedAddons[idx]).length === 0 && customServices.length === 0 && (
                         <div className="text-center py-4 text-white/20 italic text-[10px] uppercase font-bold tracking-widest">
                           {isPt ? 'Nenhum item selecionado' : 'No items selected'}
                         </div>
