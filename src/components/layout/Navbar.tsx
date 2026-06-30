@@ -45,7 +45,7 @@ export function Navbar() {
   };
 
   const navItems = [
-    { name: t('nav.home'), href: '#' },
+    { name: t('nav.home'), href: '' },
     { name: t('nav.about'), href: '#about' },
     { name: t('nav.portfolio'), href: '#work' },
     { name: t('nav.services'), href: '#services' },
@@ -66,7 +66,7 @@ export function Navbar() {
           animate={{ opacity: 1, x: 0 }}
           className="flex items-center"
         >
-          <a href="#" className="hover:brightness-110 transition-all cursor-pointer">
+          <a href="" className="hover:brightness-110 transition-all cursor-pointer">
             <img 
               src="/images/logos/zarco_logo_web_developmet_no_bg300px_no_bg.png" 
               alt="Zarco Studios" 
