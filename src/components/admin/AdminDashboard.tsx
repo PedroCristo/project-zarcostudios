@@ -383,6 +383,7 @@ interface ClientProject {
   subscriptionEnabled?: boolean;
   subscriptionPaid?: boolean;
   subscriptionPaidAt?: string;
+  stripeSubscriptionId?: string;
   subFeaturesSlack?: boolean;
   subFeaturesSecurity?: boolean;
   subFeaturesHosting?: boolean;
@@ -8216,6 +8217,41 @@ SWIFT: ABCDEFGH"
                               }`}
                             >
                               {editingClientProject.subscriptionEnabled ? "Shown / Enabled" : "Hidden / Inactive"}
+                            </Button>
+                          </div>
+
+                          <div className="flex items-center justify-between p-3 bg-white/[0.02] border border-white/5 rounded-xl">
+                            <div className="space-y-0.5">
+                              <span className="text-[10px] font-bold text-white uppercase tracking-wider block">
+                                Subscription Paid Status
+                              </span>
+                              <span className="text-[8px] text-white/40 font-bold uppercase tracking-widest block">
+                                Toggle subscription payment status manually for testing or admin overrides
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              onClick={() => {
+                                const newPaidState = !editingClientProject.subscriptionPaid;
+                                setEditingClientProject({
+                                  ...editingClientProject,
+                                  subscriptionPaid: newPaidState,
+                                  subscriptionPaidAt: newPaidState ? new Date().toISOString() : undefined,
+                                  stripeSubscriptionId: newPaidState ? (editingClientProject.stripeSubscriptionId || `ch_stripe_man_${Math.random().toString(36).substring(2, 8)}`) : undefined
+                                });
+                                // Clear local storage for this project id to allow checkout button to render again on client-side
+                                if (!newPaidState) {
+                                  localStorage.removeItem(`subscribed_${editingClientProject.id}`);
+                                  localStorage.removeItem(`sub_txn_${editingClientProject.id}`);
+                                }
+                              }}
+                              className={`h-9 px-4 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                                editingClientProject.subscriptionPaid
+                                  ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-500"
+                                  : "bg-yellow-500/10 border border-yellow-500/20 text-yellow-500"
+                              }`}
+                            >
+                              {editingClientProject.subscriptionPaid ? "Paid / Active" : "Unpaid / Pending"}
                             </Button>
                           </div>
                         </div>
