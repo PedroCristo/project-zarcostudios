@@ -80,7 +80,7 @@ export function Services() {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.2 }}
               viewport={{ once: true }}
-              className="card padding-25-860px padding-50-758px glass p-10 rounded-[3rem] group hover:border-zarco-cyan/30 transition-all relative overflow-hidden flex flex-col h-full border border-white/5"
+              className="card padding-25-860px padding-50-757px glass p-10 rounded-[3rem] group hover:border-zarco-cyan/30 transition-all relative overflow-hidden flex flex-col h-full border border-white/5"
             >
               <div className="text-zarco-cyan mb-10 group-hover:scale-110 transition-transform origin-left">
                 {service.icon}
@@ -105,7 +105,7 @@ export function Services() {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.2 }}
               viewport={{ once: true }}
-              className="card padding-25-860px padding-50-758px glass p-10 rounded-[3rem] group hover:border-zarco-cyan/30 transition-all relative overflow-hidden flex flex-col h-full border border-white/5"
+              className="card padding-25-860px padding-50-757px glass p-10 rounded-[3rem] group hover:border-zarco-cyan/30 transition-all relative overflow-hidden flex flex-col h-full border border-white/5"
             >
               <div className="text-zarco-cyan mb-8 p-4 bg-zarco-cyan/5 w-fit rounded-2xl group-hover:scale-110 transition-transform origin-left">
                 {category.mainIcon}
