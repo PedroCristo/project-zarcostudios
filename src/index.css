@@ -21,6 +21,11 @@
   --radius-3xl: 2rem;
 }
 
+/* General Styles */
+.display-under-1023px {
+  display: none !important;
+}
+
 @layer base {
   body {
     @apply bg-zarco-black text-white font-sans antialiased selection:bg-zarco-cyan/30 selection:text-white;

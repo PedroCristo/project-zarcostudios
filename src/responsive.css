@@ -21,6 +21,22 @@
 
 }
 
+@media only screen and (max-width: 1023px) {
+    /* Genneral Styles */
+
+    .display-under-1023px {
+        display: flex !important;
+    }
+
+    .display-up-1023px {
+        display: none !important;
+    }
+
+
+
+
+}
+
 @media only screen and (max-width: 960px) {
 
     /* General Styles */
