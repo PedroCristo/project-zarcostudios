@@ -12,7 +12,7 @@ export function WhatWeDo() {
   ];
 
   return (
-    <section className="py-32 bg-transparent relative z-10 overflow-hidden">
+    <section className="margin-top-less-80-960px py-32 bg-transparent relative z-10 overflow-hidden">
       <div className="container mx-auto px-6">
         <div className="flex flex-col lg:flex-row items-center gap-20">
           {/* Left Side */}

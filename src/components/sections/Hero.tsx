@@ -7,7 +7,7 @@ export function Hero() {
   const { t } = useTranslation();
 
   return (
-    <section className="relative min-h-screen flex items-center justify-center pt-20 overflow-hidden">
+    <section className="hero-section relative min-h-screen flex items-center justify-center pt-20 overflow-hidden">
       {/* Background Video */}
       <div className="absolute inset-0 z-0 bg-zarco-black">
         <video
@@ -19,7 +19,7 @@ export function Hero() {
         >
           <source src="/videos/desktop/Web_development_studio_backgrou_video_720px.mp4" type="video/mp4" />
         </video>
-        {/* Linear Gradient Overlay as requested */}
+        {/* Linear Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-b from-zarco-black via-transparent to-zarco-black" />
         <div className="absolute inset-0 bg-zarco-black/20" />
       </div>
@@ -39,10 +39,10 @@ export function Hero() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-6xl md:text-8xl font-black leading-[1.1] tracking-tighter uppercase"
+            className="main-title text-6xl md:text-8xl font-black leading-[1.1] tracking-tighter uppercase"
           >
             {t('hero.title1')} <br />
-            <span className="text-glow-cyan text-zarco-cyan">{t('hero.title2')}</span>
+            <span className="main-title text-glow-cyan text-zarco-cyan">{t('hero.title2')}</span>
           </motion.h1>
 
           <motion.p 

@@ -166,7 +166,7 @@ export function Newsletter() {
               <Button
                 type="submit"
                 disabled={isButtonDisabled}
-                className="bg-zarco-cyan hover:bg-zarco-cyan/90 text-black font-black uppercase tracking-widest text-[10px] rounded-full px-8 h-12 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn bg-zarco-cyan hover:bg-zarco-cyan/90 text-black font-black uppercase tracking-widest text-[10px] rounded-full px-8 h-12 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {status === "loading" ? (
                   t("newsletter.loading")
@@ -181,7 +181,7 @@ export function Newsletter() {
 
             {/* Visible Checkbox ReCAPTCHA */}
             {siteKey && (
-              <div className="mt-4 flex justify-start">
+              <div className="recaptcha-button mt-5 flex justify-start">
                 <ReCAPTCHA
                   ref={recaptchaRef}
                   sitekey={siteKey}

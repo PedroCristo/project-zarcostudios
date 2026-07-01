@@ -102,7 +102,7 @@ export function Navbar() {
 
         {/* Right Actions */}
         <div className="flex items-center justify-end gap-6">
-          <div className="hidden sm:flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
+          <div className="toggler-lang hidden sm:flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
             <button 
               onClick={() => changeLanguage('en')} 
               className={`transition-colors cursor-pointer ${i18n.language === 'en' ? 'text-zarco-cyan' : 'text-white/50 hover:text-white'}`}

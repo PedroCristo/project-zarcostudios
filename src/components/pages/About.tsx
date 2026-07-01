@@ -40,14 +40,14 @@ export function About() {
   ];
 
   return (
-    <div className="pt-32 pb-20">
+    <div className="about pt-32 pb-20">
       <div className="container mx-auto px-6">
         {/* Header Section */}
         <div className="mb-24 max-w-[90%]">
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-3xl md:text-5xl font-black tracking-tight leading-tight mb-6 text-white"
+            className="text-3xl md:text-5xl font-black tracking-tight leading-tight mt-5 text-white"
           >
             {t('about.developer')}
           </motion.h1>
@@ -131,7 +131,7 @@ export function About() {
         </div>
 
         {/* Dynamic Digital Identity Business Card */}
-        <div className="mb-40">
+        <div className="mb-40 margin-top-less-70-758px">
           <div className="text-center mb-12">
             <h3 className="text-4xl font-black uppercase tracking-tight mb-4">
               {isPt ? 'Cartão de Visita Interativo' : 'Interactive Business Card'}
@@ -141,8 +141,8 @@ export function About() {
         </div>
 
         {/* The Arsenal */}
-        <div className="mb-40">
-          <h3 className="text-4xl font-black uppercase tracking-tight mb-12">{t('about.arsenal')}</h3>
+        <div className="mb-40 margin-top-less-70-758px">
+          <h3 className="text-4xl font-black uppercase tracking-tight mb-12 text-center-758px">{t('about.arsenal')}</h3>
           <div className="flex flex-wrap gap-4">
             {arsenal.map((skill, i) => (
               <motion.span
@@ -160,7 +160,7 @@ export function About() {
         </div>
 
         {/* Work Approach */}
-        <div className="mb-40">
+        <div className="mb-40 margin-top-less-70-758px">
           <h3 className="text-center text-4xl font-black uppercase tracking-tight mb-20">{t('about.approach')}</h3>
           <div className="grid md:grid-cols-3 gap-8">
              {approach.map((item, i) => (
@@ -192,7 +192,7 @@ export function About() {
              viewport={{ once: true }}
              className="relative z-10 flex flex-col items-center gap-10"
            >
-              <h2 className="text-5xl md:text-7xl font-black uppercase tracking-tighter leading-none">
+              <h2 className="text-3xl min-[600px]:text-5xl md:text-7xl font-black uppercase tracking-tighter leading-none">
                 {t('about.build_cta')}
               </h2>
               <a href="#contact">

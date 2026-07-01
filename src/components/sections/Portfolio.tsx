@@ -225,7 +225,7 @@ export function Portfolio({ featuredOnly = false }: { featuredOnly?: boolean }) 
       onMouseEnter={() => setHoveredId(project.id)}
       onMouseLeave={() => setHoveredId(null)}
       onClick={() => window.location.hash = `#project/${project.id}`}
-      className="group cursor-pointer flex flex-col gap-6"
+      className="group cursor-pointer flex flex-col gap-20"
     >
       <div className="relative aspect-[19/11] overflow-hidden rounded-[2.5rem] bg-white/[0.03] border border-white/5">
         {project.image ? (
@@ -282,7 +282,7 @@ export function Portfolio({ featuredOnly = false }: { featuredOnly?: boolean }) 
 
   return (
     <section id="work" className={`py-32 bg-zarco-black relative overflow-hidden ${isWorkArchive ? 'min-h-[70vh]' : ''}`}>
-      <div className="container mx-auto px-6 relative z-10">
+      <div className="container mx-auto px-6 relative z-10 margin-top-less-70-758px ">
         <div className="flex justify-between items-center mb-20">
           <h2 className="text-4xl md:text-5xl font-black uppercase tracking-tight">{t('work.title')}</h2>
           {!isWorkArchive && (
@@ -373,7 +373,7 @@ export function Portfolio({ featuredOnly = false }: { featuredOnly?: boolean }) 
 
             {/* Portfolio Grid */}
             {portfolioProjects.length > 0 && (
-              <div className="grid md:grid-cols-3 gap-8 text-zarco-white">
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 text-zarco-white">
                 {portfolioProjects.map((project, i) => renderProjectCard(project, i))}
               </div>
             )}
@@ -386,7 +386,7 @@ export function Portfolio({ featuredOnly = false }: { featuredOnly?: boolean }) 
                     {isPt ? 'Projetos Académicos' : 'College Projects'}
                   </h3>
                 </div>
-                <div className="grid md:grid-cols-3 gap-8 text-zarco-white">
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 text-zarco-white">
                   {collegeProjects.map((project, i) => renderProjectCard(project, i))}
                 </div>
               </div>

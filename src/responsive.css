@@ -2,16 +2,31 @@
 *       RESPONSIVE CSS        *
 *******************************/
 
-@media only screen and (max-width: 1250px) {
+@media only screen and (max-width: 1280px) {
 
-    /* General Styles */
-    .margin-top-80-1250px {
-        margin-top: -80px !important;
+    /* Navbar*/
+    .toggler-lang {
+        margin-top: 50px !important;
+    }
+
+}
+
+@media only screen and (max-width: 1049px) {
+
+
+    /* Navbar*/
+    .toggler-lang {
+        margin-top: initial !important;
     }
 
 }
 
 @media only screen and (max-width: 960px) {
+
+    /* General Styles */
+    .margin-top-less-80-960px {
+        margin-top: -80px !important;
+    }
 
     /* General Styles */
     .padding-25-960px {
@@ -29,8 +44,35 @@
 
 }
 
+@media only screen and (max-width: 850px) {
+
+    /* General Styles */
+    .padding-25-860px {
+        padding: 25px !important;
+    }
+
+    .padding-15-860px {
+        padding: 25px !important;
+    }
+
+
+}
+
 
 @media only screen and (max-width: 768px) {
+
+    /* General Styles */
+    .padding-50-758px {
+        padding: 50px !important;
+    }
+
+    .margin-top-less-70-758px {
+        margin-top: -70px !important;
+    }
+
+    .text-center-758px {
+        text-align: center !important;
+    }
 
     /* Hero Section */
     .hero-section .main-title {
@@ -41,29 +83,53 @@
         padding: 0 1rem !important;
     }
 
-    #contact  .container{
+    /* Contact Section */
+
+    #contact .container {
         padding: 0 !important;
     }
-    #contact  .info-container{
+
+    #contact .info-container {
         padding: 0 1rem !important;
     }
 
-     #contact .glass-card {
+    #contact .glass-card {
         padding: 2rem !important;
+    }
+
+    /* Services Section */
+    #services {
+        text-align: center !important;
+    }
+
+    #services .card {
+        width: 80% !important;
+        margin: 0 auto !important;
     }
 
 }
 
 @media only screen and (max-width: 639px) {
 
+    /* General Styles */
+    .padding-25-639px {
+        padding: 25px !important;
+    }
+
     .newsletter .btn {
-        top: 40px !important;
-        position: relative !important;
+        height: 50px !important;
+        margin-top: 20px;
+        width: 250px !important;
+        margin-left: -10px;
     }
 
     .newsletter form {
         padding: 0.5rem !important;
-        height: 70px !important;
+        height: 50px !important;
+    }
+
+    .newsletter .recaptcha-button {
+        margin-top: 110px !important;
     }
 
 }
@@ -74,5 +140,21 @@
     .hero-section .main-title {
         font-size: 3.5rem !important;
     }
+
+    /* Services Section */
+    #services .card {
+        width: 100% !important;
+        margin: 0 auto !important;
+    }
+
+}
+
+@media only screen and (max-width: 480px) {
+
+    /* Hero Section */
+    .hero-section .main-title {
+        font-size: 3rem !important;
+    }
+
 
 }

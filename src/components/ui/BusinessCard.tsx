@@ -88,7 +88,7 @@ export function BusinessCard() {
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat"
           }}
-          className="w-full rounded-[2.5rem] border border-white/10 p-1 sm:p-2 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden transition-shadow hover:shadow-[0_40px_80px_-15px_rgba(79,209,220,0.15)] flex flex-col [@media(min-width:700px)]:aspect-[1.58/1]"
+          className="w-full rounded-[2.5rem] border border-white/10 p-1 sm:p-2 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.8)] relative overflow-hidden transition-shadow hover:shadow-[0_40px_80px_-15px_rgba(79,209,220,0.15)] flex flex-col"
         >
           {/* Glowing Ambient Backdrop Follower */}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_var(--x,50%)_var(--y,50%),rgba(79,209,220,0.08)_0%,transparent_50%)] pointer-events-none z-0" />

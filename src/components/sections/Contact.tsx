@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { useState, useRef, FormEvent } from "react";
 import ReCAPTCHA from "react-google-recaptcha";
 
+const isContactPage = window.location.hash === "#contact";
+
 export function Contact() {
   const { t, i18n } = useTranslation();
   const [formData, setFormData] = useState(() => {
@@ -113,7 +115,9 @@ export function Contact() {
   return (
     <section
       id="contact"
-      className="margin-top-0-1250px py-32 bg-zarco-black relative overflow-hidden"
+      className={`py-32 bg-zarco-black relative overflow-hidden ${
+        isContactPage ? " " : "margin-top-less-80-960px"
+      }`}
     >
       {/* Toast Notification */}
       <AnimatePresence>
@@ -389,7 +393,7 @@ export function Contact() {
                 </div>
               )}
 
-              <div className="flex justify-end pt-8">
+              <div className="flex justify-start pt-8">
                 <Button
                   type="submit"
                   disabled={

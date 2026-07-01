@@ -66,8 +66,8 @@ export function Services() {
   ];
 
   return (
-    <section id="services" className="py-32 bg-transparent relative z-10 scroll-mt-24">
-      <div className="container mx-auto px-6">
+    <section id="services" className="margin-top-less-80-960px py-32 bg-transparent relative z-10 scroll-mt-24">
+      <div className="w-full px-6 lg:container lg:mx-auto">
         <div className="mb-20">
           <h2 className="text-4xl md:text-5xl font-black uppercase tracking-tight">{t('services.title')}</h2>
         </div>
@@ -80,7 +80,7 @@ export function Services() {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.2 }}
               viewport={{ once: true }}
-              className="glass p-10 rounded-[3rem] group hover:border-zarco-cyan/30 transition-all relative overflow-hidden flex flex-col h-full border border-white/5"
+              className="card padding-25-860px padding-50-758px glass p-10 rounded-[3rem] group hover:border-zarco-cyan/30 transition-all relative overflow-hidden flex flex-col h-full border border-white/5"
             >
               <div className="text-zarco-cyan mb-10 group-hover:scale-110 transition-transform origin-left">
                 {service.icon}
@@ -105,13 +105,13 @@ export function Services() {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.2 }}
               viewport={{ once: true }}
-              className="glass p-10 rounded-[3rem] group hover:border-zarco-cyan/30 transition-all relative overflow-hidden flex flex-col h-full border border-white/5"
+              className="card padding-25-860px padding-50-758px glass p-10 rounded-[3rem] group hover:border-zarco-cyan/30 transition-all relative overflow-hidden flex flex-col h-full border border-white/5"
             >
               <div className="text-zarco-cyan mb-8 p-4 bg-zarco-cyan/5 w-fit rounded-2xl group-hover:scale-110 transition-transform origin-left">
                 {category.mainIcon}
               </div>
               
-              <h3 className="text-2xl font-black uppercase tracking-tight mb-10 group-hover:text-zarco-cyan transition-colors">
+              <h3 className="text-2xl text-left font-black uppercase tracking-tight mb-10 group-hover:text-zarco-cyan transition-colors">
                 {category.title}
               </h3>
 
